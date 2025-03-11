@@ -28,7 +28,7 @@ def get_status():
             return status
     except Exception:
         pass
-    return "blocked"  # Default to blocked
+    return "unblocked"  # Default to unblocked if file doesn't exist
 
 
 def main():
