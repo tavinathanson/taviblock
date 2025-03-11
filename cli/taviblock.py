@@ -12,7 +12,7 @@ BLOCKER_START = "# BLOCKER START"
 BLOCKER_END = "# BLOCKER END"
 # Default config file location (one domain per line, ignore lines starting with '#')
 current_directory = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE_DEFAULT = os.path.join(current_directory, "config.txt")
+CONFIG_FILE_DEFAULT = os.path.join(current_directory, "../config.txt")
 LOCK_FILE = "/tmp/disable_single.lock"
 # File used to signal status to the Chrome extension
 STATUS_FILE = "/tmp/gmailblock_status.txt"
@@ -271,7 +271,6 @@ def remove_entries_for_target(target, entries_to_remove):
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
     print(f"Entries for target '{target}' removed from block list.")
-    # Signal status change if removal means unblocking for that target.
     update_status_file("unblocked")
 
 
