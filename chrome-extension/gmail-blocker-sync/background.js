@@ -5,8 +5,8 @@ const BLOCK_RULE_ID = 1;
 // Function to update the dynamic rule based on current status
 function updateDynamicRule() {
   if (blockStatus) {
-    // Add rule to block mail.google.com if not already active
     chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [BLOCK_RULE_ID],
       addRules: [{
         "id": BLOCK_RULE_ID,
         "priority": 1,
@@ -18,16 +18,14 @@ function updateDynamicRule() {
             "image", "media", "font", "object", "ping", "csp_report", "other"
           ]
         }
-      }],
-      removeRuleIds: []
+      }]
     }, () => {
-      console.log("Dynamic block rule added for mail.google.com");
+      console.log("Dynamic block rule updated for mail.google.com");
     });
   } else {
-    // Remove rule if unblocked
     chrome.declarativeNetRequest.updateDynamicRules({
-      addRules: [],
-      removeRuleIds: [BLOCK_RULE_ID]
+      removeRuleIds: [BLOCK_RULE_ID],
+      addRules: []
     }, () => {
       console.log("Dynamic block rule removed (mail.google.com unblocked)");
     });
