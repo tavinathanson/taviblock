@@ -39,10 +39,9 @@ def read_config(config_file):
 
 def generate_block_entries(domains):
     """
-    Generate hosts file entries.
+    Generate hosts file entries for IPv4 and IPv6.
 
-    For a root domain (assumed if there are only two parts, e.g. facebook.com),
-    block both the bare domain and a list of common subdomains.
+    For a root domain (e.g. facebook.com), block both the bare domain and a list of common subdomains.
     For a specific subdomain (e.g. calendar.google.com), block only that subdomain.
     """
     entries = []
@@ -54,13 +53,18 @@ def generate_block_entries(domains):
         if not domain:
             continue
         parts = domain.split(".")
-        if len(parts) == 2:  # root domain like facebook.com
+        if len(parts) == 2:  # root domain, e.g., facebook.com
+            # Add both IPv4 and IPv6 for the root domain
             entries.append(f"127.0.0.1 {domain}")
+            entries.append(f"::1 {domain}")
             for prefix in common_subdomains:
-                entries.append(f"127.0.0.1 {prefix}.{domain}")
+                subdomain = f"{prefix}.{domain}"
+                entries.append(f"127.0.0.1 {subdomain}")
+                entries.append(f"::1 {subdomain}")
         else:
-            # For specified subdomains, only block the exact entry.
+            # For subdomains, block both IPv4 and IPv6 entries.
             entries.append(f"127.0.0.1 {domain}")
+            entries.append(f"::1 {domain}")
     return entries
 
 
@@ -134,7 +138,7 @@ def is_blocking_active():
 def update_blocking(domains):
     """
     Update the current block with new entries from the latest config,
-    but do not remove any entries that are already present.
+    including both IPv4 and IPv6 entries, while keeping existing entries.
     """
     new_entries = set(generate_block_entries(domains))
     backup_hosts()
@@ -156,7 +160,7 @@ def update_blocking(domains):
             continue
         if stripped == BLOCKER_END:
             in_block_section = False
-            # Combine current block entries with new entries (union)
+            # Merge existing entries with new IPv4/IPv6 entries.
             union_entries = current_block_entries | new_entries
             for entry in sorted(union_entries):
                 updated_lines.append(entry)
@@ -168,7 +172,6 @@ def update_blocking(domains):
             updated_lines.append(stripped)
 
     if not block_section_found:
-        # If no block section exists, simply add one with the new entries.
         updated_lines.append(BLOCKER_START)
         for entry in sorted(new_entries):
             updated_lines.append(entry)
@@ -176,7 +179,7 @@ def update_blocking(domains):
 
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(updated_lines) + "\n")
-    print("Blocking updated with latest config (union of current and new entries).")
+    print("Blocking updated with IPv4 and IPv6 entries from the latest config.")
 
 
 def check_single_disable_lock():

@@ -6,8 +6,12 @@ youtube.com
 netflix.com
 eventbrite.com
 mailchimp.com
+www.gmail.com
 gmail.com
 mail.google.com
+www.mail.google.com
+googlemail.com
+www.googlemail.com
 messenger.com
 m.me
 fbcdn.net
