@@ -13,6 +13,7 @@ BLOCKER_END = "# BLOCKER END"
 # Default config file location (one domain per line, ignore lines starting with '#')
 current_directory = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE_DEFAULT = os.path.join(current_directory, "config.txt")
+LOCK_FILE = "/tmp/disable_single.lock"
 
 
 def require_admin():
@@ -178,6 +179,87 @@ def update_blocking(domains):
     print("Blocking updated with latest config (union of current and new entries).")
 
 
+def check_single_disable_lock():
+    """Return True if no single-domain disable is active; False otherwise."""
+    return not os.path.exists(LOCK_FILE)
+
+
+def create_single_disable_lock(domain):
+    """Create a lock file to mark a single-domain disable as active."""
+    with open(LOCK_FILE, "w") as f:
+        f.write(domain)
+
+
+def remove_single_disable_lock():
+    """Remove the single-domain disable lock file."""
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+
+
+def remove_single_entry(domain):
+    """Remove only the block entry for the specified domain from the block section."""
+    backup_hosts()
+    with open(HOSTS_PATH, "r") as f:
+        lines = f.readlines()
+    new_lines = []
+    in_block_section = False
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if stripped == BLOCKER_START:
+            in_block_section = True
+            new_lines.append(stripped)
+            continue
+        if stripped == BLOCKER_END:
+            in_block_section = False
+            new_lines.append(stripped)
+            continue
+        if in_block_section:
+            # Skip the line if it exactly matches the domain we want to disable.
+            if stripped == f"127.0.0.1 {domain}":
+                continue
+        new_lines.append(stripped)
+    with open(HOSTS_PATH, "w") as f:
+        f.write("\n".join(new_lines) + "\n")
+    print(f"Entry for {domain} removed from block list.")
+
+
+def add_single_entry(domain):
+    """Re-add the block entry for the specified domain in the block section if not already present."""
+    backup_hosts()
+    with open(HOSTS_PATH, "r") as f:
+        lines = f.readlines()
+    new_lines = []
+    in_block_section = False
+    block_section_found = False
+    entry_added = False
+
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if stripped == BLOCKER_START:
+            block_section_found = True
+            in_block_section = True
+            new_lines.append(stripped)
+            continue
+        if stripped == BLOCKER_END:
+            if in_block_section and not entry_added:
+                new_lines.append(f"127.0.0.1 {domain}")
+                entry_added = True
+            in_block_section = False
+            new_lines.append(stripped)
+            continue
+        new_lines.append(stripped)
+
+    if not block_section_found:
+        # Create a new block section if none exists.
+        new_lines.append(BLOCKER_START)
+        new_lines.append(f"127.0.0.1 {domain}")
+        new_lines.append(BLOCKER_END)
+
+    with open(HOSTS_PATH, "w") as f:
+        f.write("\n".join(new_lines) + "\n")
+    print(f"Entry for {domain} re-added to block list.")
+
+
 def main():
     require_admin()
 
@@ -224,6 +306,23 @@ def main():
     # 'status' command: check if blocking is currently active
     parser_status = subparsers.add_parser("status", help="Check if blocking is active")
 
+    parser_disable_single = subparsers.add_parser(
+        "disable-single",
+        help="Temporarily disable blocking for a single domain/subdomain",
+    )
+    parser_disable_single.add_argument(
+        "--domain",
+        required=True,
+        type=str,
+        help="The domain or subdomain to disable (must match an entry in the block section)",
+    )
+    parser_disable_single.add_argument(
+        "--duration",
+        type=int,
+        default=30,
+        help="Duration in minutes for which blocking is disabled (default: 30)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "block":
@@ -254,6 +353,33 @@ def main():
     elif args.command == "update":
         domains = read_config(args.config)
         update_blocking(domains)
+    elif args.command == "disable-single":
+        domain = args.domain.strip()
+        if not check_single_disable_lock():
+            print(
+                "A single-domain disable is already active. Only one can be active at any given time."
+            )
+            sys.exit(1)
+        create_single_disable_lock(domain)
+
+        # Fixed 5-minute wait period before disabling.
+        print(
+            f"Disable-single command accepted for {domain}. Waiting 5 minutes before disabling..."
+        )
+        for minutes_left in range(5, 0, -1):
+            print(f"Waiting... {minutes_left} minute(s) until {domain} is disabled.")
+            time.sleep(60)
+
+        remove_single_entry(domain)
+        print(f"{domain} is now disabled for {args.duration} minute(s).")
+
+        for minutes_left in range(args.duration, 0, -1):
+            print(f"Re-enabling {domain} in {minutes_left} minute(s)...")
+            time.sleep(60)
+
+        add_single_entry(domain)
+        print(f"{domain} block re-enabled.")
+        remove_single_disable_lock()
 
 
 if __name__ == "__main__":
