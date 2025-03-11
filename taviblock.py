@@ -14,6 +14,17 @@ BLOCKER_END = "# BLOCKER END"
 current_directory = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE_DEFAULT = os.path.join(current_directory, "config.txt")
 LOCK_FILE = "/tmp/disable_single.lock"
+# File used to signal status to the Chrome extension
+STATUS_FILE = "/tmp/gmailblock_status.txt"
+
+
+def update_status_file(status):
+    """Update the status file with 'blocked' or 'unblocked'."""
+    try:
+        with open(STATUS_FILE, "w") as f:
+            f.write(status)
+    except Exception as e:
+        print(f"Error writing status file: {e}")
 
 
 def require_admin():
@@ -134,6 +145,7 @@ def apply_blocking(domains):
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
     print("Blocking applied.")
+    update_status_file("blocked")
 
 
 def remove_blocking():
@@ -155,6 +167,7 @@ def remove_blocking():
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
     print("Blocking removed.")
+    update_status_file("unblocked")
 
 
 def is_blocking_active():
@@ -211,6 +224,7 @@ def update_blocking(domains):
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(updated_lines) + "\n")
     print("Blocking updated with IPv4 and IPv6 entries from the latest config.")
+    update_status_file("blocked")
 
 
 def check_single_disable_lock():
@@ -257,6 +271,8 @@ def remove_entries_for_target(target, entries_to_remove):
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
     print(f"Entries for target '{target}' removed from block list.")
+    # Signal status change if removal means unblocking for that target.
+    update_status_file("unblocked")
 
 
 def add_entries_for_target(target, entries_to_add):
@@ -300,6 +316,7 @@ def add_entries_for_target(target, entries_to_add):
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
     print(f"Entries for target '{target}' re-added to block list.")
+    update_status_file("blocked")
 
 
 def main():
