@@ -1,3 +1,4 @@
+[default]
 facebook.com
 instagram.com
 twitter.com
@@ -6,12 +7,6 @@ youtube.com
 netflix.com
 eventbrite.com
 mailchimp.com
-www.gmail.com
-gmail.com
-mail.google.com
-www.mail.google.com
-googlemail.com
-www.googlemail.com
 messenger.com
 m.me
 fbcdn.net
@@ -33,3 +28,11 @@ photos.google.com
 login.mailchimp.com
 us11.admin.mailchimp.com
 ccarnet.org
+
+[gmail]
+www.gmail.com
+gmail.com
+mail.google.com
+www.mail.google.com
+googlemail.com
+www.googlemail.com

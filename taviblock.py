@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-import argparse
 import time
 import os
 import sys
 from pathlib import Path
+import argparse
 
 # Path to the system hosts file on macOS
 HOSTS_PATH = "/etc/hosts"
@@ -24,7 +24,10 @@ def require_admin():
 
 
 def read_config(config_file):
-    """Read the config file and return a list of domains/subdomains to block."""
+    """
+    Read the config file and return a list of domains/subdomains to block.
+    This is used for the block/disable/update commands.
+    """
     if not os.path.exists(config_file):
         print(f"Config file {config_file} does not exist.")
         sys.exit(1)
@@ -35,6 +38,34 @@ def read_config(config_file):
             if line and not line.startswith("#"):
                 domains.append(line)
     return domains
+
+
+def read_config_sections(config_file):
+    """
+    Reads the config file and returns a dictionary mapping section names to lists of domains.
+
+    Use section headers in the config file like:
+      [gmail]
+      gmail.com
+      mail.google.com
+
+    Lines not under any header will be added under the "default" section.
+    """
+    sections = {}
+    current_section = "default"
+    sections[current_section] = []
+    with open(config_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("[") and line.endswith("]"):
+                current_section = line[1:-1].strip()
+                if current_section not in sections:
+                    sections[current_section] = []
+            else:
+                sections[current_section].append(line)
+    return sections
 
 
 def generate_block_entries(domains):
@@ -187,10 +218,10 @@ def check_single_disable_lock():
     return not os.path.exists(LOCK_FILE)
 
 
-def create_single_disable_lock(domain):
+def create_single_disable_lock(target):
     """Create a lock file to mark a single-domain disable as active."""
     with open(LOCK_FILE, "w") as f:
-        f.write(domain)
+        f.write(target)
 
 
 def remove_single_disable_lock():
@@ -199,8 +230,11 @@ def remove_single_disable_lock():
         os.remove(LOCK_FILE)
 
 
-def remove_single_entry(domain):
-    """Remove only the block entry for the specified domain from the block section."""
+def remove_entries_for_target(target, entries_to_remove):
+    """
+    Remove specific block entries (IPv4 and IPv6) from the hosts file block section
+    for the given target (either a section or a single domain).
+    """
     backup_hosts()
     with open(HOSTS_PATH, "r") as f:
         lines = f.readlines()
@@ -217,24 +251,26 @@ def remove_single_entry(domain):
             new_lines.append(stripped)
             continue
         if in_block_section:
-            # Skip the line if it exactly matches the domain we want to disable.
-            if stripped == f"127.0.0.1 {domain}":
-                continue
+            if stripped in entries_to_remove:
+                continue  # Skip this entry.
         new_lines.append(stripped)
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
-    print(f"Entry for {domain} removed from block list.")
+    print(f"Entries for target '{target}' removed from block list.")
 
 
-def add_single_entry(domain):
-    """Re-add the block entry for the specified domain in the block section if not already present."""
+def add_entries_for_target(target, entries_to_add):
+    """
+    Re-add specific block entries (IPv4 and IPv6) into the hosts file block section
+    for the given target (either a section or a single domain).
+    """
     backup_hosts()
     with open(HOSTS_PATH, "r") as f:
         lines = f.readlines()
     new_lines = []
     in_block_section = False
     block_section_found = False
-    entry_added = False
+    existing_entries = set()
 
     for line in lines:
         stripped = line.rstrip("\n")
@@ -244,23 +280,26 @@ def add_single_entry(domain):
             new_lines.append(stripped)
             continue
         if stripped == BLOCKER_END:
-            if in_block_section and not entry_added:
-                new_lines.append(f"127.0.0.1 {domain}")
-                entry_added = True
+            # Add any missing entries before closing the block section.
+            for entry in sorted(entries_to_add):
+                if entry not in existing_entries:
+                    new_lines.append(entry)
             in_block_section = False
             new_lines.append(stripped)
             continue
+        if in_block_section:
+            existing_entries.add(stripped)
         new_lines.append(stripped)
 
     if not block_section_found:
-        # Create a new block section if none exists.
         new_lines.append(BLOCKER_START)
-        new_lines.append(f"127.0.0.1 {domain}")
+        for entry in sorted(entries_to_add):
+            new_lines.append(entry)
         new_lines.append(BLOCKER_END)
 
     with open(HOSTS_PATH, "w") as f:
         f.write("\n".join(new_lines) + "\n")
-    print(f"Entry for {domain} re-added to block list.")
+    print(f"Entries for target '{target}' re-added to block list.")
 
 
 def main():
@@ -297,7 +336,7 @@ def main():
         help="Duration in minutes for which blocking is disabled (default: 30)",
     )
 
-    # Add this new subparser for the update command
+    # 'update' command: update the current block with new config entries (without removing existing ones)
     parser_update = subparsers.add_parser(
         "update",
         help="Update the current block with latest config, adding new entries only",
@@ -309,15 +348,16 @@ def main():
     # 'status' command: check if blocking is currently active
     parser_status = subparsers.add_parser("status", help="Check if blocking is active")
 
+    # 'disable-single' command: temporarily disable a single domain/subdomain or an entire section
     parser_disable_single = subparsers.add_parser(
         "disable-single",
-        help="Temporarily disable blocking for a single domain/subdomain",
+        help="Temporarily disable blocking for a single domain/subdomain or an entire section",
     )
     parser_disable_single.add_argument(
-        "--domain",
+        "--target",
         required=True,
         type=str,
-        help="The domain or subdomain to disable (must match an entry in the block section)",
+        help="The domain/subdomain or section name to disable",
     )
     parser_disable_single.add_argument(
         "--duration",
@@ -357,31 +397,42 @@ def main():
         domains = read_config(args.config)
         update_blocking(domains)
     elif args.command == "disable-single":
-        domain = args.domain.strip()
+        target = args.target.strip()
+        # Read config sections from the config file
+        sections = read_config_sections(args.config)
+        # Determine if the target is a section name or a single domain/subdomain
+        if target in sections:
+            domains_to_disable = sections[target]
+        else:
+            domains_to_disable = [target]
+        # Generate the union of block entries (IPv4 & IPv6) for the target domains
+        entries_to_disable = set()
+        for domain in domains_to_disable:
+            entries = generate_block_entries([domain])
+            entries_to_disable.update(entries)
+
         if not check_single_disable_lock():
             print(
                 "A single-domain disable is already active. Only one can be active at any given time."
             )
             sys.exit(1)
-        create_single_disable_lock(domain)
+        create_single_disable_lock(target)
 
-        # Fixed 5-minute wait period before disabling.
         print(
-            f"Disable-single command accepted for {domain}. Waiting 5 minutes before disabling..."
+            f"Disable-single command accepted for '{target}'. Waiting 5 minutes before disabling..."
         )
         for minutes_left in range(5, 0, -1):
-            print(f"Waiting... {minutes_left} minute(s) until {domain} is disabled.")
+            print(f"Waiting... {minutes_left} minute(s) until '{target}' is disabled.")
             time.sleep(60)
 
-        remove_single_entry(domain)
-        print(f"{domain} is now disabled for {args.duration} minute(s).")
-
+        remove_entries_for_target(target, entries_to_disable)
+        print(f"'{target}' is now disabled for {args.duration} minute(s).")
         for minutes_left in range(args.duration, 0, -1):
-            print(f"Re-enabling {domain} in {minutes_left} minute(s)...")
+            print(f"Re-enabling '{target}' in {minutes_left} minute(s)...")
             time.sleep(60)
 
-        add_single_entry(domain)
-        print(f"{domain} block re-enabled.")
+        add_entries_for_target(target, entries_to_disable)
+        print(f"'{target}' block re-enabled.")
         remove_single_disable_lock()
 
 
