@@ -14,11 +14,13 @@ BLOCKER_END = "# BLOCKER END"
 current_directory = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE_DEFAULT = os.path.join(current_directory, "config.txt")
 
+
 def require_admin():
     """Ensure the script is run as root."""
     if os.geteuid() != 0:
         print("This script must be run as root. Try running with sudo.")
         sys.exit(1)
+
 
 def read_config(config_file):
     """Read the config file and return a list of domains/subdomains to block."""
@@ -32,6 +34,7 @@ def read_config(config_file):
             if line and not line.startswith("#"):
                 domains.append(line)
     return domains
+
 
 def generate_block_entries(domains):
     """
@@ -49,7 +52,7 @@ def generate_block_entries(domains):
         domain = domain.strip()
         if not domain:
             continue
-        parts = domain.split('.')
+        parts = domain.split(".")
         if len(parts) == 2:  # root domain like facebook.com
             entries.append(f"127.0.0.1 {domain}")
             for prefix in common_subdomains:
@@ -59,11 +62,13 @@ def generate_block_entries(domains):
             entries.append(f"127.0.0.1 {domain}")
     return entries
 
+
 def backup_hosts():
     """Make a backup copy of /etc/hosts if one doesn't already exist."""
     backup_file = HOSTS_PATH + ".backup"
     if not os.path.exists(backup_file):
         os.system(f"cp {HOSTS_PATH} {backup_file}")
+
 
 def apply_blocking(domains):
     """Apply the blocking by updating /etc/hosts with our entries."""
@@ -94,6 +99,7 @@ def apply_blocking(domains):
         f.write("\n".join(new_lines) + "\n")
     print("Blocking applied.")
 
+
 def remove_blocking():
     """Remove the blocking section from /etc/hosts."""
     backup_hosts()
@@ -114,6 +120,7 @@ def remove_blocking():
         f.write("\n".join(new_lines) + "\n")
     print("Blocking removed.")
 
+
 def is_blocking_active():
     """Check if our block markers exist in /etc/hosts."""
     with open(HOSTS_PATH, "r") as f:
@@ -122,6 +129,55 @@ def is_blocking_active():
                 return True
     return False
 
+
+def update_blocking(domains):
+    """
+    Update the current block with new entries from the latest config,
+    but do not remove any entries that are already present.
+    """
+    new_entries = set(generate_block_entries(domains))
+    backup_hosts()
+
+    with open(HOSTS_PATH, "r") as f:
+        lines = f.readlines()
+
+    updated_lines = []
+    in_block_section = False
+    current_block_entries = set()
+    block_section_found = False
+
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if stripped == BLOCKER_START:
+            block_section_found = True
+            in_block_section = True
+            updated_lines.append(stripped)
+            continue
+        if stripped == BLOCKER_END:
+            in_block_section = False
+            # Combine current block entries with new entries (union)
+            union_entries = current_block_entries | new_entries
+            for entry in sorted(union_entries):
+                updated_lines.append(entry)
+            updated_lines.append(stripped)
+            continue
+        if in_block_section:
+            current_block_entries.add(stripped)
+        else:
+            updated_lines.append(stripped)
+
+    if not block_section_found:
+        # If no block section exists, simply add one with the new entries.
+        updated_lines.append(BLOCKER_START)
+        for entry in sorted(new_entries):
+            updated_lines.append(entry)
+        updated_lines.append(BLOCKER_END)
+
+    with open(HOSTS_PATH, "w") as f:
+        f.write("\n".join(updated_lines) + "\n")
+    print("Blocking updated with latest config (union of current and new entries).")
+
+
 def main():
     require_admin()
 
@@ -129,16 +185,41 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 'block' command: enforce the block based on the config file
-    parser_block = subparsers.add_parser("block", help="Enable blocking according to config file")
-    parser_block.add_argument("--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file")
+    parser_block = subparsers.add_parser(
+        "block", help="Enable blocking according to config file"
+    )
+    parser_block.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
 
     # 'disable' command: temporarily disable blocking after a delay
-    parser_disable = subparsers.add_parser("disable", help="Temporarily disable blocking after a delay")
-    parser_disable.add_argument("--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file")
-    parser_disable.add_argument("--delay", type=int, default=30,
-                                help="Delay in minutes before unblocking (default: 30)")
-    parser_disable.add_argument("--duration", type=int, default=30,
-                                help="Duration in minutes for which blocking is disabled (default: 30)")
+    parser_disable = subparsers.add_parser(
+        "disable", help="Temporarily disable blocking after a delay"
+    )
+    parser_disable.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
+    parser_disable.add_argument(
+        "--delay",
+        type=int,
+        default=30,
+        help="Delay in minutes before unblocking (default: 30)",
+    )
+    parser_disable.add_argument(
+        "--duration",
+        type=int,
+        default=30,
+        help="Duration in minutes for which blocking is disabled (default: 30)",
+    )
+
+    # Add this new subparser for the update command
+    parser_update = subparsers.add_parser(
+        "update",
+        help="Update the current block with latest config, adding new entries only",
+    )
+    parser_update.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
 
     # 'status' command: check if blocking is currently active
     parser_status = subparsers.add_parser("status", help="Check if blocking is active")
@@ -149,7 +230,9 @@ def main():
         domains = read_config(args.config)
         apply_blocking(domains)
     elif args.command == "disable":
-        print(f"Disable command accepted. Blocking will remain active for {args.delay} minutes.")
+        print(
+            f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
+        )
         time.sleep(args.delay * 60)
         remove_blocking()
         print(f"Blocking is disabled for {args.duration} minutes. Enjoy your break!")
@@ -162,6 +245,10 @@ def main():
             print("Blocking is active.")
         else:
             print("Blocking is not active.")
+    elif args.command == "update":
+        domains = read_config(args.config)
+        update_blocking(domains)
+
 
 if __name__ == "__main__":
     main()

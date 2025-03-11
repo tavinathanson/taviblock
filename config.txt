@@ -1,2 +1,5 @@
 facebook.com
 instagram.com
+twitter.com
+reddit.com
+youtube.com
