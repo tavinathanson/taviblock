@@ -233,10 +233,16 @@ def main():
         print(
             f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
         )
-        time.sleep(args.delay * 60)
+        for minutes_left in range(args.delay, 0, -1):
+            print(f"Waiting... {minutes_left} minute(s) remaining until unblock.")
+            time.sleep(60)
         remove_blocking()
-        print(f"Blocking is disabled for {args.duration} minutes. Enjoy your break!")
-        time.sleep(args.duration * 60)
+        print(
+            f"Blocking is now disabled for {args.duration} minutes. Enjoy your break!"
+        )
+        for minutes_left in range(args.duration, 0, -1):
+            print(f"Re-enabling block in {minutes_left} minute(s)...")
+            time.sleep(60)
         domains = read_config(args.config)
         apply_blocking(domains)
         print("Blocking re-enabled.")
