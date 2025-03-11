@@ -1,15 +1,16 @@
 {
   "name": "Gmail Blocker Sync",
   "version": "1.0",
-  "manifest_version": 2,
+  "manifest_version": 3,
   "description": "Blocks Gmail based on CLI tool status.",
   "permissions": [
-    "webRequest",
-    "webRequestBlocking",
-    "*://mail.google.com/*",
-    "nativeMessaging"
+    "nativeMessaging",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "*://mail.google.com/*"
   ],
   "background": {
-    "scripts": ["background.js"]
+    "service_worker": "background.js"
   }
 }
