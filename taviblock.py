@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import time
 import os
 import sys
 from pathlib import Path
-import argparse
 
 # Path to the system hosts file on macOS
 HOSTS_PATH = "/etc/hosts"
@@ -315,6 +315,12 @@ def main():
     parser_block.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
+    # Extra option for testing: block for one minute then auto-remove
+    parser_block.add_argument(
+        "--test",
+        action="store_true",
+        help="Test block for one minute for development purposes",
+    )
 
     # 'disable' command: temporarily disable blocking after a delay
     parser_disable = subparsers.add_parser(
@@ -371,6 +377,11 @@ def main():
     if args.command == "block":
         domains = read_config(args.config)
         apply_blocking(domains)
+        if args.test:
+            print("Test mode active: blocking will be removed in 1 minute.")
+            time.sleep(60)
+            remove_blocking()
+            print("Test complete: blocking removed.")
     elif args.command == "disable":
         print(
             f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
