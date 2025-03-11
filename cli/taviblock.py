@@ -12,7 +12,9 @@ BLOCKER_START = "# BLOCKER START"
 BLOCKER_END = "# BLOCKER END"
 # Default config file location (one domain per line, ignore lines starting with '#')
 current_directory = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILE_DEFAULT = os.path.join(current_directory, "../config.txt")
+# Use the config.txt file in the repository root by default.
+CONFIG_FILE_DEFAULT = str(Path(__file__).resolve().parent.parent / "config.txt")
+
 LOCK_FILE = "/tmp/disable_single.lock"
 # File used to signal status to the Chrome extension
 STATUS_FILE = "/tmp/gmailblock_status.txt"
