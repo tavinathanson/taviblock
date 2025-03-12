@@ -30,6 +30,7 @@ photos.google.com
 login.mailchimp.com
 us11.admin.mailchimp.com
 ccarnet.org
+nextdoor.com
 
 [gmail]
 www.gmail.com
