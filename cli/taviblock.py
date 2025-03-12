@@ -38,6 +38,8 @@ def read_config(config_file):
         for line in f:
             line = line.strip()
             if line and not line.startswith("#"):
+                if line.startswith('[') and line.endswith(']'):
+                    continue
                 domains.append(line)
     return domains
 
