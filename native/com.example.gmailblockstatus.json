@@ -1,9 +1,0 @@
-{
-  "name": "com.example.gmailblockstatus",
-  "description": "Gmail Block Status Host",
-  "path": "/Users/tavi/drive/repos/taviblock/native/gmailblock_status_host.py",
-  "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://eehohjikchjbaepaklhfaicobncgngif/"
-  ]
-}

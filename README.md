@@ -1,146 +1,189 @@
-TaviBlock & Gmail Blocker Sync
+TaviBlock & PF Blocker
+========================
 
-This repository provides a self-control solution for blocking Gmail on macOS by combining a CLI tool with a Chrome extension. The CLI tool modifies your /etc/hosts file to block specified domains (supporting both IPv4 and IPv6) and writes a status flag to /tmp/gmailblock_status.txt. The Chrome extension uses native messaging to query that status and block Gmail in the browser when needed.
+## Overview
+TaviBlock & PF Blocker is a self-control solution for blocking distracting websites on macOS. It uses a dual-layer approach:
 
-Repository Layout
+- **Network-Level Blocking**: Modifies `/etc/hosts` to block specified domains.
+- **Firewall-Level Blocking**: Uses PF (Packet Filter) rules to block outgoing connections to IP addresses resolved from those domains.
 
+This approach helps prevent access to distracting websites by interfering with both DNS resolution and direct connections at the firewall level.
+
+## Repository Layout
+
+```
 taviblock/
 ├── cli/
-│   └── taviblock.py
-├── config.txt
-├── chrome-extension/
-│   └── gmail-blocker-sync/
-│       ├── manifest.json
-│       └── background.js
-├── native/
-│   ├── gmailblock_status_host.py
-│   └── com.example.gmailblockstatus.json
-└── README.md
+│   ├── taviblock.py     # CLI tool to manage /etc/hosts blocking
+│   └── pf_agent.py      # PF Firewall Agent to block resolved IP addresses
+├── config.txt           # Configuration file containing list of domains to block
+└── README.md            # This file
+```
 
-Components
+## Prerequisites
+- macOS with PF (Packet Filter) enabled
+- Python 3
+- Root (administrator) privileges
 
-CLI Tool (cli/taviblock.py)
-------------------------------------------------------------
-Function:
-  - Modifies /etc/hosts to block domains (e.g., Gmail) based on a configuration file.
-Default Config File:
-  - The tool uses the config.txt file in the repository root (i.e. ~/drive/repos/taviblock/config.txt) by default.
-Commands:
-  - block: Enforce blocking.
-  - disable: Temporarily disable blocking.
-  - update: Update the block list.
-  - status: Check block status.
-  - disable-single: Temporarily disable blocking for a single domain or section.
-Status Synchronization:
-  - Writes "blocked" or "unblocked" to /tmp/gmailblock_status.txt, which the native messaging host reads.
+## Installation
 
-Chrome Extension (chrome-extension/gmail-blocker-sync/)
-------------------------------------------------------------
-Function:
-  - Uses Manifest V3 and the declarativeNetRequest API to block requests to mail.google.com when blocking is active.
-Key Files:
-  - manifest.json (updated to Manifest V3)
-  - background.js (queries the native messaging host and updates dynamic rules)
-Native Messaging:
-  - Communicates with the native messaging host to obtain the current block status.
+### 1. Clone the Repository
+Clone the repository into your desired directory:
 
-Native Messaging Host (native/gmailblock_status_host.py)
-------------------------------------------------------------
-Function:
-  - Reads the status file (/tmp/gmailblock_status.txt) and returns the current block status to the Chrome extension.
-Manifest:
-  - The file com.example.gmailblockstatus.json defines how Chrome can launch the host.
+```bash
+git clone https://github.com/tavinathanson/taviblock.git ~/drive/repos/taviblock_ws/taviblock
+```
 
-Design Considerations & Discussion Summary
+### 2. Configure Domains to Block
+Edit the `config.txt` file to list the domains you want to block. Lines starting with `#` are ignored. You may also use section headers (e.g., `[social]`) to group related domains.
 
-Network-Level Blocking:
-  - The CLI tool updates the /etc/hosts file with entries that redirect target domains to localhost.
-  - This works for new DNS lookups (for both IPv4 and IPv6) but may not break persistent connections.
+Example:
 
-SelfControl-Like Lockout:
-  - Commands in the CLI tool (e.g., disable and disable-single) allow temporary disabling of the block with timers, making it harder to bypass your self-imposed restrictions.
+```ini
+[social]
+facebook.com
+twitter.com
 
-Browser-Level Blocking:
-  - To further enforce self-control, the Chrome extension blocks Gmail in the browser using dynamic rules via the declarativeNetRequest API.
-  - It continuously queries a native messaging host to obtain the current block status.
+[streaming]
+netflix.com
+youtube.com
+```
 
-Synchronization:
-  - The CLI tool writes a status flag to /tmp/gmailblock_status.txt.
-  - The native messaging host reads this file and reports back to the extension, ensuring that both the network-level and browser-level blocks remain synchronized.
+### 3. Install the CLI Tool
+To easily use the CLI tool from any location, create a symbolic link in your PATH:
 
-Repository Organization & Persistence:
-  - All source code lives in this repository.
-  - By default, the CLI tool uses the config.txt file located at the repository root.
-  - Symlinks and launch agents can be used to integrate the CLI tool into system paths and to run it on startup.
+```bash
+sudo ln -s ~/drive/repos/taviblock_ws/taviblock/cli/taviblock.py /usr/local/bin/taviblock
+```
 
-Installation & Setup
+### 4. Set Up the PF Firewall Agent
+The PF Firewall Agent (`pf_agent.py`) continuously updates PF rules to block traffic to IP addresses resolved from the domains in your config file.
 
-1. Repository Setup
-   - Clone the repository into your drive:
-       git clone <your-repo-url> ~/drive/repos/taviblock
+Run the agent manually with:
 
-2. CLI Tool
-   - Symlink the CLI Tool:
-       Create a symlink from your repo to a directory on your PATH (e.g., /usr/local/bin):
-           sudo ln -s ~/drive/repos/taviblock/cli/taviblock.py /usr/local/bin/taviblock
-   - Usage Examples:
-       * Block Domains (applies blocking rules and writes "blocked" to /tmp/gmailblock_status.txt):
-           sudo taviblock block --config ~/drive/repos/taviblock/config.txt
-       * Temporarily Disable Blocking (waits for a delay, removes blocking, then re-applies after a set duration):
-           sudo taviblock disable --config ~/drive/repos/taviblock/config.txt --delay 30 --duration 30
-       * Disable a Specific Domain or Section (temporarily disable blocking for a specific target, e.g., [gmail] section):
-           sudo taviblock disable-single --target gmail --duration 30
-       * Update the Block List (refresh the current block entries without removing existing ones):
-           sudo taviblock update --config ~/drive/repos/taviblock/config.txt
-       * Check Blocking Status (report whether blocking is active):
-           sudo taviblock status
-   - Optional – Launch at Boot:
-       Create a launch agent (e.g., ~/Library/LaunchAgents/com.yourname.taviblock.plist) with the following contents:
+```bash
+sudo python3 ~/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py
+```
 
-       <?xml version="1.0" encoding="UTF-8"?>
-       <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-       <plist version="1.0">
-         <dict>
-           <key>Label</key>
-           <string>com.yourname.taviblock</string>
-           <key>ProgramArguments</key>
-           <array>
-             <string>/usr/local/bin/taviblock</string>
-             <string>block</string>
-             <string>--config</string>
-             <string>/Users/<YOUR_USERNAME>/drive/repos/taviblock/config.txt</string>
-           </array>
-           <key>RunAtLoad</key>
-           <true/>
-           <key>KeepAlive</key>
-           <true/>
-           <key>StandardOutPath</key>
-           <string>/tmp/taviblock.out</string>
-           <key>StandardErrorPath</key>
-           <string>/tmp/taviblock.err</string>
-         </dict>
-       </plist>
+#### Optional: Configure a Launch Agent for the PF Agent
+To run the PF agent automatically on startup, create a launch agent plist file:
 
-       Load it with:
-           launchctl load ~/Library/LaunchAgents/com.yourname.taviblock.plist
+1. Create the file `~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist` with the following content:
 
-3. Chrome Extension
-   - Load Extension:
-       1. Open Chrome and navigate to chrome://extensions.
-       2. Enable Developer Mode.
-       3. Click "Load unpacked" and select the folder:
-          ~/drive/repos/taviblock/chrome-extension/gmail-blocker-sync
-       4. Note the generated extension ID.
-   - Update Native Messaging Manifest:
-       - Edit the file native/com.example.gmailblockstatus.json and replace <YOUR_EXTENSION_ID> with your extension’s ID.
-   - Install the Manifest:
-       mkdir -p ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/
-       cp ~/drive/repos/taviblock/native/com.example.gmailblockstatus.json ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tavinathanson.taviblock_pf</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/taviblock_pf.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/taviblock_pf.err</string>
+</dict>
+</plist>
+```
 
-4. Native Messaging Host
-   - Ensure Executable:
-       Make sure the host script is executable:
-           chmod +x ~/drive/repos/taviblock/native/gmailblock_status_host.py
-   - Manifest Installation:
-       Verify that the native messaging host manifest is installed in:
-           ~/Library/Application Support/Google/Chrome/NativeMessagingHosts/
+2. Load the launch agent with:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
+```
+
+To unload the agent, use:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
+```
+
+## Usage
+
+### CLI Tool (`taviblock.py`)
+The CLI tool manages domain blocking via modifications to `/etc/hosts`. Run the following command to see available options:
+
+```bash
+sudo taviblock --help
+```
+
+Available commands:
+
+- **block**: Enable blocking by updating `/etc/hosts`.
+
+  Example:
+  ```bash
+  sudo taviblock block --config ~/drive/repos/taviblock_ws/taviblock/config.txt
+  ```
+
+- **disable**: Temporarily disable blocking after a specified delay.
+
+  Example:
+  ```bash
+  sudo taviblock disable --delay 30 --duration 30
+  ```
+
+- **update**: Refresh the blocking rules from the current `config.txt` without removing persistent entries.
+
+  Example:
+  ```bash
+  sudo taviblock update --config ~/drive/repos/taviblock_ws/taviblock/config.txt
+  ```
+
+- **status**: Check whether blocking is currently active.
+
+  Example:
+  ```bash
+  sudo taviblock status
+  ```
+
+- **disable-single**: Temporarily disable blocking for a specific domain or section.
+
+  Example:
+  ```bash
+  sudo taviblock disable-single --target social --duration 10
+  ```
+
+### PF Firewall Agent (`pf_agent.py`)
+The PF agent updates firewall rules by performing the following steps:
+
+1. **Reads the Config File**: Retrieves a list of domains from `config.txt` (ignoring comments and section headers).
+2. **DNS Resolution**: Resolves each domain to its current IP addresses.
+3. **Generate PF Rules**: Creates PF rules for each IP:
+   - IPv4: `block drop quick from any to <ip>`
+   - IPv6: `block drop quick inet6 from any to <ip>`
+4. **Update PF Rules**: Writes the rules to a temporary file and loads them using `pfctl` under the anchor `taviblock_pf`.
+5. **Continuous Update**: Repeats this process every 5 minutes.
+
+To run the PF agent manually:
+
+```bash
+sudo python3 ~/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py
+```
+
+To stop the agent, terminate the process or unload it if it's running as a launch agent:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
+```
+
+## Troubleshooting
+
+- **Check PF Status**: Ensure PF is active with:
+  ```bash
+  sudo pfctl -s info
+  ```
+
+- **Rule Verification**: Inspect the temporary rule file at `/tmp/taviblock_pf.rules` to verify the generated rules.
+
+- **Log Files**: Check `/tmp/taviblock_pf.out` and `/tmp/taviblock_pf.err` for output and error messages if using a launch agent.
+
+- **Permissions**: Both the CLI tool and PF agent require root privileges. Make sure to run them with `
