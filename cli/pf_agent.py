@@ -26,6 +26,19 @@ def read_domains(config_file):
     return list(domains)
 
 
+def reverse_lookup(ip):
+    """
+    Performs a reverse DNS lookup using dig -x on the given IP address.
+    Returns the PTR record as a string, or an empty string if not found.
+    """
+    try:
+        result = subprocess.run(["dig", "-x", ip, "+short"], capture_output=True, text=True)
+        return result.stdout.strip()
+    except Exception as e:
+        print(f"Error in reverse lookup of {ip}: {e}")
+        return ""
+
+
 def resolve_domain(domain):
     """
     Resolves a domain name to its IP addresses by querying external DNS using dig.
@@ -86,6 +99,17 @@ def main():
         all_ips = set()
         for domain in domains:
             ips = resolve_domain(domain)
+            # If domain is Slack-related, verify via reverse DNS lookup
+            if "slack" in domain.lower():
+                verified_ips = set()
+                for ip in ips:
+                    ptr = reverse_lookup(ip)
+                    # Accept IP if PTR contains 'slack' or 'amazonaws'
+                    if "slack" in ptr.lower() or "amazonaws" in ptr.lower():
+                        verified_ips.add(ip)
+                    else:
+                        print(f"Skipping IP {ip} for domain {domain} because PTR doesn't indicate Slack or AWS: {ptr}")
+                ips = verified_ips
             all_ips.update(ips)
         rules = generate_pf_rules(all_ips)
         if rules:

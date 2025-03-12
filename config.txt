@@ -22,6 +22,7 @@ honeybook.com
 slack.com
 slack-edge.com
 cdn.slack.com
+api.slack.com
 clarity.microsoft.com
 ads.google.com
 business.google.com
