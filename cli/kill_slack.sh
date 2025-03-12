@@ -9,5 +9,26 @@ while true; do
             killall Slack
         fi
     fi
+
+    # Check if the blocking entry for gmail.com is present in /etc/hosts
+    if grep -q "127\.0\.0\.1[[:space:]]*gmail\.com" /etc/hosts; then
+        echo "$(date): gmail.com block is active; closing any Gmail tabs in Google Chrome."
+        osascript <<'EOF'
+tell application "Google Chrome"
+    repeat with w in windows
+        set gmailTabs to {}
+        repeat with t in tabs of w
+            if (URL of t contains "gmail.com") or (URL of t contains "mail.google.com") then
+                copy t to end of gmailTabs
+            end if
+        end repeat
+        repeat with t in gmailTabs
+            close t
+        end repeat
+    end repeat
+end tell
+EOF
+    fi
+
     sleep 10
 done 
