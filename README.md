@@ -65,10 +65,8 @@ Run the agent manually with:
 sudo python3 ~/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py
 ```
 
-#### Optional: Configure a Launch Agent for the PF Agent
-To run the PF agent automatically on startup, you can use a Launch Agent (user-level) or a Launch Daemon (system-level). 
-If you choose the Launch Agent option, create the plist file at:
-  ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
+#### Optional: Configure a Launch Daemon for the PF Agent
+To run the PF agent automatically on startup, use a Launch Daemon. Directly create the plist file at: `/Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist`
 with the following content:
 
 ```xml
@@ -95,16 +93,15 @@ with the following content:
 </plist>
 ```
 
-2. To load as a Launch Agent:
-   launchctl load ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
+2. Set proper ownership:
+   ```bash
+   sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
+   ```
 
-Alternatively, to run as a Launch Daemon (recommended for tasks needing elevated privileges):
-   a. Copy the plist file to /Library/LaunchDaemons/:
-      sudo cp ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist /Library/LaunchDaemons/
-   b. Set proper ownership:
-      sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
-   c. Load the daemon with:
-      sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
+3. Load the daemon with:
+   ```bash
+   sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
+   ```
 
 ## Usage
 
@@ -218,43 +215,36 @@ If the block is active and Slack is running, the script will kill the Slack proc
    chmod +x taviblock/cli/kill_slack.sh
    ```
 
-3. **(Optional) Automate with a Launch Agent or Launch Daemon:**
-   It is recommended to run the kill_slack.sh script as a Launch Agent (user-level) since it manages a user application (Slack). However, if needed, you can also run it as a Launch Daemon (system-level).
+3. **Automate with a Launch Daemon:**
+   Run the kill_slack.sh script as a Launch Daemon.
 
-   **Using a Launch Agent (User-level):**
-   - Create a plist file at `~/Library/LaunchAgents/com.tavinathanson.killslack.plist` with the following content:
-     ```xml
-     <?xml version="1.0" encoding="UTF-8"?>
-     <!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-     <plist version="1.0">
-     <dict>
-         <key>Label</key>
-         <string>com.tavinathanson.killslack</string>
-         <key>ProgramArguments</key>
-         <array>
-             <string>/Users/tavi/repos/taviblock_ws/taviblock/cli/kill_slack.sh</string>
-         </array>
-         <key>RunAtLoad</key>
-         <true/>
-         <key>KeepAlive</key>
-         <true/>
-     </dict>
-     </plist>
-     ```
+   Directly create a plist file at `/Library/LaunchDaemons/com.tavinathanson.killslack.plist` with the following content:
 
-   - Load with:
-     launchctl load ~/Library/LaunchAgents/com.tavinathanson.killslack.plist
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>Label</key>
+       <string>com.tavinathanson.killslack</string>
+       <key>ProgramArguments</key>
+       <array>
+           <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/kill_slack.sh</string>
+       </array>
+       <key>RunAtLoad</key>
+       <true/>
+       <key>KeepAlive</key>
+       <true/>
+   </dict>
+   </plist>
+   ```
 
-   - Unload with:
-     launchctl unload ~/Library/LaunchAgents/com.tavinathanson.killslack.plist
+2. Set proper ownership:
+   ```bash
+   sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.killslack.plist
+   ```
 
-   **Using a Launch Daemon (System-level):**
-   - Copy the above plist file to `/Library/LaunchDaemons/` and set proper ownership:
-     sudo cp ~/Library/LaunchAgents/com.tavinathanson.killslack.plist /Library/LaunchDaemons/
-     sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.killslack.plist
-
-   - Load with:
-     sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.killslack.plist
-
-   - Unload with:
-     sudo launchctl unload /Library/LaunchDaemons/com.tavinathanson.killslack.plist
+3. Load the daemon with:
+   ```bash
+   sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.killslack.plist
+   ```
