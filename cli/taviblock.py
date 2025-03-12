@@ -389,6 +389,9 @@ def main():
         default=30,
         help="Duration in minutes for which blocking is disabled (default: 30)",
     )
+    parser_disable_single.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
 
     args = parser.parse_args()
 
@@ -401,22 +404,24 @@ def main():
             remove_blocking()
             print("Test complete: blocking removed.")
     elif args.command == "disable":
-        print(
-            f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
-        )
-        for minutes_left in range(args.delay, 0, -1):
-            print(f"Waiting... {minutes_left} minute(s) remaining until unblock.")
-            time.sleep(60)
-        remove_blocking()
-        print(
-            f"Blocking is now disabled for {args.duration} minutes. Enjoy your break!"
-        )
-        for minutes_left in range(args.duration, 0, -1):
-            print(f"Re-enabling block in {minutes_left} minute(s)...")
-            time.sleep(60)
-        domains = read_config(args.config)
-        apply_blocking(domains)
-        print("Blocking re-enabled.")
+        try:
+            print(
+                f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
+            )
+            for minutes_left in range(args.delay, 0, -1):
+                print(f"Waiting... {minutes_left} minute(s) remaining until unblock.")
+                time.sleep(60)
+            remove_blocking()
+            print(
+                f"Blocking is now disabled for {args.duration} minutes. Enjoy your break!"
+            )
+            for minutes_left in range(args.duration, 0, -1):
+                print(f"Re-enabling block in {minutes_left} minute(s)...")
+                time.sleep(60)
+        finally:
+            domains = read_config(args.config)
+            apply_blocking(domains)
+            print("Blocking re-enabled automatically on exit.")
     elif args.command == "status":
         if is_blocking_active():
             print("Blocking is active.")
@@ -446,23 +451,24 @@ def main():
             )
             sys.exit(1)
         create_single_disable_lock(target)
-
-        print(
-            f"Disable-single command accepted for '{target}'. Waiting 5 minutes before disabling..."
-        )
-        for minutes_left in range(5, 0, -1):
-            print(f"Waiting... {minutes_left} minute(s) until '{target}' is disabled.")
-            time.sleep(60)
-
-        remove_entries_for_target(target, entries_to_disable)
-        print(f"'{target}' is now disabled for {args.duration} minute(s).")
-        for minutes_left in range(args.duration, 0, -1):
-            print(f"Re-enabling '{target}' in {minutes_left} minute(s)...")
-            time.sleep(60)
-
-        add_entries_for_target(target, entries_to_disable)
-        print(f"'{target}' block re-enabled.")
-        remove_single_disable_lock()
+        try:
+            print(
+                f"Disable-single command accepted for '{target}'. Waiting 5 minutes before disabling..."
+            )
+            for minutes_left in range(5, 0, -1):
+                print(
+                    f"Waiting... {minutes_left} minute(s) until '{target}' is disabled."
+                )
+                time.sleep(60)
+            remove_entries_for_target(target, entries_to_disable)
+            print(f"'{target}' is now disabled for {args.duration} minute(s).")
+            for minutes_left in range(args.duration, 0, -1):
+                print(f"Re-enabling '{target}' in {minutes_left} minute(s)...")
+                time.sleep(60)
+        finally:
+            add_entries_for_target(target, entries_to_disable)
+            print(f"'{target}' block re-enabled automatically on exit.")
+            remove_single_disable_lock()
 
 
 if __name__ == "__main__":

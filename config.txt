@@ -20,6 +20,8 @@ simplifimoney.com
 honeybook.com
 17hats.com
 slack.com
+slack-edge.com
+cdn.slack.com
 clarity.microsoft.com
 ads.google.com
 business.google.com
