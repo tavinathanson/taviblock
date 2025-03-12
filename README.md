@@ -248,3 +248,27 @@ If the block is active and Slack is running, the script will kill the Slack proc
    ```bash
    sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.killslack.plist
    ```
+
+## Using Chrome with No Cache
+
+To ensure that changes to blocking rules are immediately effective, we recommend using a version of Google Chrome that runs with caching disabled. This approach helps avoid issues where cached data might bypass new blocking rules, ensuring that all requests are subject to the latest rules.
+
+### Why Disable Cache?
+
+When blocking rules are updated, cached data in the browser can sometimes allow access to previously blocked content. By disabling the cache, you ensure that all requests are fresh and subject to the current blocking rules. This is particularly useful when toggling blocking on and off, as it prevents stale data from being used.
+
+### Setting Up a No-Cache Chrome Launcher
+
+1. **Create a Custom Launcher:**
+   - Use Automator to create an application that launches Chrome with caching disabled.
+   - Add a "Run Shell Script" action with the following command:
+     ```bash
+     open -a "Google Chrome" --args --disable-application-cache --disk-cache-size=0
+     ```
+   - Save the application as "Google Chrome No Cache" in your Applications folder.
+
+2. **Add to Dock:**
+   - Drag the new application to your Dock for easy access.
+   - Optionally, change its icon to match the original Chrome icon for consistency.
+
+By using this custom launcher, you can ensure that Chrome operates without caching, providing a more reliable experience when using TaviBlock & PF Blocker.
