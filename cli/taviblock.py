@@ -379,6 +379,15 @@ def main():
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
 
+    # Add new subparser for 'restart'
+    parser_restart = subparsers.add_parser(
+        "restart",
+        help="Restart taviblock, killslack, pf_agent, reload new configs and re-launch launchctl services"
+    )
+    parser_restart.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
+
     args = parser.parse_args()
 
     if args.command == "block":
@@ -455,6 +464,25 @@ def main():
             add_entries_for_target(target, entries_to_disable)
             print(f"'{target}' block re-enabled automatically on exit.")
             remove_single_disable_lock()
+    elif args.command == "restart":
+        print("Restart command accepted. Restarting services...")
+        # Refresh blocking with the latest configuration
+        domains = read_config(args.config)
+        apply_blocking(domains)
+
+        # Kill current processes: taviblock, kill_slack, pf_agent
+        os.system("pkill taviblock")
+        os.system("pkill kill_slack")
+        os.system("pkill pf_agent")
+
+        # Relaunch launchctl services by unloading and loading their plist files
+        os.system("launchctl unload /Library/LaunchDaemons/com.tavi.taviblock.plist")
+        os.system("launchctl load /Library/LaunchDaemons/com.tavi.taviblock.plist")
+        os.system("launchctl unload /Library/LaunchDaemons/com.tavi.kill_slack.plist")
+        os.system("launchctl load /Library/LaunchDaemons/com.tavi.kill_slack.plist")
+        os.system("launchctl unload /Library/LaunchDaemons/com.tavi.pf_agent.plist")
+        os.system("launchctl load /Library/LaunchDaemons/com.tavi.pf_agent.plist")
+        print("Restart completed.")
 
 
 if __name__ == "__main__":
