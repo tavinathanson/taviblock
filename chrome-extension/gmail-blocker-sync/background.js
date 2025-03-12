@@ -46,6 +46,6 @@ function updateBlockStatus() {
   port.postMessage({ command: "getStatus" });
 }
 
-// Initial update and then update every 30 seconds
+// Initial update and then update every 1 second
 updateBlockStatus();
-setInterval(updateBlockStatus, 30000);
+setInterval(updateBlockStatus, 1000);
