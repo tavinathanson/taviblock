@@ -121,11 +121,11 @@ Available commands:
   sudo taviblock block --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
 
-- **disable**: Temporarily disable blocking after a specified delay.
+- **disable**: Temporarily disable blocking for a fixed period of 30 minutes.
 
   Example:
   ```bash
-  sudo taviblock disable --delay 30 --duration 30
+  sudo taviblock disable --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
 
 - **update**: Refresh the blocking rules from the current `config.txt` without removing persistent entries.
@@ -142,11 +142,18 @@ Available commands:
   sudo taviblock status
   ```
 
-- **disable-single**: Temporarily disable blocking for a specific domain or section.
+- **disable-single**: Temporarily disable blocking for a specific domain or section for a fixed period of 30 minutes.
 
   Example:
   ```bash
-  sudo taviblock disable-single --target social --duration 10
+  sudo taviblock disable-single --target social --config ~/drive/repos/taviblock_ws/taviblock/config.txt
+  ```
+
+- **restart**: Restart taviblock and related services.
+
+  Example:
+  ```bash
+  sudo taviblock restart --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
 
 ### PF Firewall Agent (`pf_agent.py`)
@@ -251,7 +258,7 @@ If the block is active and Slack is running, the script will kill the Slack proc
 
 ## Using Chrome with No Cache
 
-To ensure that changes to blocking rules are immediately effective, we recommend using a version of Google Chrome that runs with caching disabled. This approach helps avoid issues where cached data might bypass new blocking rules, ensuring that all requests are subject to the latest rules.
+To ensure that changes to blocking rules are immediately effective, we recommend using a version of Google Chrome that runs with caching disabled. This approach helps avoid issues where cached data might bypass new blocking rules, ensuring that all requests are subject to the latest rules. This is particularly useful when toggling blocking on and off, as it prevents stale data from being used.
 
 ### Why Disable Cache?
 

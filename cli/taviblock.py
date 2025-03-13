@@ -319,12 +319,6 @@ def main():
     parser_block.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
-    # Extra option for testing: block for one minute then auto-remove
-    parser_block.add_argument(
-        "--test",
-        action="store_true",
-        help="Test block for one minute for development purposes",
-    )
 
     # 'disable' command: temporarily disable blocking after a delay
     parser_disable = subparsers.add_parser(
@@ -332,18 +326,6 @@ def main():
     )
     parser_disable.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
-    )
-    parser_disable.add_argument(
-        "--delay",
-        type=int,
-        default=30,
-        help="Delay in minutes before unblocking (default: 30)",
-    )
-    parser_disable.add_argument(
-        "--duration",
-        type=int,
-        default=30,
-        help="Duration in minutes for which blocking is disabled (default: 30)",
     )
 
     # 'update' command: update the current block with new config entries (without removing existing ones)
@@ -370,12 +352,6 @@ def main():
         help="The domain/subdomain or section name to disable",
     )
     parser_disable_single.add_argument(
-        "--duration",
-        type=int,
-        default=30,
-        help="Duration in minutes for which blocking is disabled (default: 30)",
-    )
-    parser_disable_single.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
 
@@ -393,24 +369,15 @@ def main():
     if args.command == "block":
         domains = read_config(args.config)
         apply_blocking(domains)
-        if args.test:
-            print("Test mode active: blocking will be removed in 1 minute.")
-            time.sleep(60)
-            remove_blocking()
-            print("Test complete: blocking removed.")
     elif args.command == "disable":
         try:
-            print(
-                f"Disable command accepted. Blocking will remain active for {args.delay} minutes."
-            )
-            for minutes_left in range(args.delay, 0, -1):
+            print("Disable command accepted. Blocking will remain active for 30 minutes.")
+            for minutes_left in range(30, 0, -1):
                 print(f"Waiting... {minutes_left} minute(s) remaining until unblock.")
                 time.sleep(60)
             remove_blocking()
-            print(
-                f"Blocking is now disabled for {args.duration} minutes. Enjoy your break!"
-            )
-            for minutes_left in range(args.duration, 0, -1):
+            print("Blocking is now disabled for 30 minutes. Enjoy your break!")
+            for minutes_left in range(30, 0, -1):
                 print(f"Re-enabling block in {minutes_left} minute(s)...")
                 time.sleep(60)
         finally:
@@ -456,8 +423,8 @@ def main():
                 )
                 time.sleep(60)
             remove_entries_for_target(target, entries_to_disable)
-            print(f"'{target}' is now disabled for {args.duration} minute(s).")
-            for minutes_left in range(args.duration, 0, -1):
+            print(f"'{target}' is now disabled for 30 minute(s).")
+            for minutes_left in range(30, 0, -1):
                 print(f"Re-enabling '{target}' in {minutes_left} minute(s)...")
                 time.sleep(60)
         finally:
