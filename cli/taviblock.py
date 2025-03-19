@@ -387,11 +387,22 @@ def main():
         target = args.target.strip()
         # Read config sections from the config file
         sections = read_config_sections(args.config)
+        # Get a flat list of domains from the config file
+        domains_list = read_config(args.config)
         # Determine if the target is a section name or a single domain/subdomain
         if target in sections:
             domains_to_disable = sections[target]
-        else:
+        elif not target.endswith('.com') and (target + '.com') in sections:
+            target = target + '.com'
+            domains_to_disable = sections[target]
+        elif target in domains_list:
             domains_to_disable = [target]
+        elif not target.endswith('.com') and (target + '.com') in domains_list:
+            target = target + '.com'
+            domains_to_disable = [target]
+        else:
+            print(f"Error: The target '{target}' does not exist in the config file.")
+            sys.exit(1)
         # Generate the union of block entries (IPv4 & IPv6) for the target domains
         entries_to_disable = set()
         for domain in domains_to_disable:
