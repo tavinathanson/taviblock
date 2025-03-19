@@ -4,9 +4,10 @@ reddit.com
 youtube.com
 netflix.com
 eventbrite.com
-mailchimp.com
-nn.com
 nytimes.com
+cnn.com
+timesofisrael.com
+jpost.com
 mrmoneymustache.com
 washingtonpost.com
 foxnews.com
@@ -14,17 +15,11 @@ linkedin.com
 simplifimoney.com
 honeybook.com
 17hats.com
-slack.com
-slack-edge.com
-cdn.slack.com
-api.slack.com
 clarity.microsoft.com
 ads.google.com
 business.google.com
 admin.17hats.com
 photos.google.com
-login.mailchimp.com
-us11.admin.mailchimp.com
 ccarnet.org
 nextdoor.com
 
@@ -89,3 +84,14 @@ fbcdn.net
 facebook.com
 business.facebook.com
 adsmanager.facebook.com
+
+[slack]
+slack.com
+slack-edge.com
+cdn.slack.com
+api.slack.com
+
+[mailchimp]
+mailchimp.com
+login.mailchimp.com
+us11.admin.mailchimp.com
