@@ -16,6 +16,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE_DEFAULT = str(Path(__file__).resolve().parent.parent / "config.txt")
 
 LOCK_FILE = "/tmp/disable_single.lock"
+MULTIPLE_LOCK_FILE = "/tmp/disable_multiple.lock"
 
 
 def require_admin():
@@ -306,6 +307,23 @@ def add_entries_for_target(target, entries_to_add):
     print(f"Entries for target '{target}' re-added to block list.")
 
 
+def check_multiple_disable_lock():
+    """Return True if no multiple-domain disable is active; False otherwise."""
+    return not os.path.exists(MULTIPLE_LOCK_FILE)
+
+
+def create_multiple_disable_lock(targets):
+    """Create a lock file to mark a multiple-domain disable as active."""
+    with open(MULTIPLE_LOCK_FILE, "w") as f:
+        f.write("\n".join(targets))
+
+
+def remove_multiple_disable_lock():
+    """Remove the multiple-domain disable lock file."""
+    if os.path.exists(MULTIPLE_LOCK_FILE):
+        os.remove(MULTIPLE_LOCK_FILE)
+
+
 def main():
     require_admin()
 
@@ -352,6 +370,22 @@ def main():
         help="The domain/subdomain or section name to disable",
     )
     parser_disable_single.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
+
+    # 'disable-multiple' command: temporarily disable multiple domains/sections
+    parser_disable_multiple = subparsers.add_parser(
+        "disable-multiple",
+        help="Temporarily disable blocking for up to 4 domains/sections after a 10-minute wait",
+    )
+    parser_disable_multiple.add_argument(
+        "--targets",
+        required=True,
+        nargs="+",
+        type=str,
+        help="Up to 4 domains/subdomains or section names to disable",
+    )
+    parser_disable_multiple.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
 
@@ -433,6 +467,69 @@ def main():
             add_entries_for_target(target, entries_to_disable)
             print(f"'{target}' block re-enabled automatically on exit.")
             remove_single_disable_lock()
+    elif args.command == "disable-multiple":
+        if len(args.targets) > 4:
+            print("Error: You can only specify up to 4 targets.")
+            sys.exit(1)
+
+        # Read config sections from the config file
+        sections = read_config_sections(args.config)
+        # Get a flat list of domains from the config file
+        domains_list = read_config(args.config)
+        
+        # Process each target and collect domains to disable
+        all_domains_to_disable = set()
+        processed_targets = []
+        
+        for target in args.targets:
+            target = target.strip()
+            if target in sections:
+                all_domains_to_disable.update(sections[target])
+                processed_targets.append(target)
+            elif not target.endswith('.com') and (target + '.com') in sections:
+                target = target + '.com'
+                all_domains_to_disable.update(sections[target])
+                processed_targets.append(target)
+            elif target in domains_list:
+                all_domains_to_disable.add(target)
+                processed_targets.append(target)
+            elif not target.endswith('.com') and (target + '.com') in domains_list:
+                target = target + '.com'
+                all_domains_to_disable.add(target)
+                processed_targets.append(target)
+            else:
+                print(f"Error: The target '{target}' does not exist in the config file.")
+                sys.exit(1)
+
+        # Generate the union of block entries (IPv4 & IPv6) for all target domains
+        entries_to_disable = set()
+        for domain in all_domains_to_disable:
+            entries = generate_block_entries([domain])
+            entries_to_disable.update(entries)
+
+        if not check_multiple_disable_lock():
+            print("A multiple-domain disable is already active. Only one can be active at any given time.")
+            sys.exit(1)
+        if not check_single_disable_lock():
+            print("A single-domain disable is active. Please wait for it to complete.")
+            sys.exit(1)
+
+        create_multiple_disable_lock(processed_targets)
+        try:
+            print(f"Disable-multiple command accepted for targets: {', '.join(processed_targets)}")
+            print("Waiting 10 minutes before disabling...")
+            for minutes_left in range(10, 0, -1):
+                print(f"Waiting... {minutes_left} minute(s) until targets are disabled.")
+                time.sleep(60)
+            remove_entries_for_target("multiple targets", entries_to_disable)
+            print(f"Targets are now disabled for 30 minute(s).")
+            for minutes_left in range(30, 0, -1):
+                print(f"Re-enabling targets in {minutes_left} minute(s)...")
+                time.sleep(60)
+        finally:
+            add_entries_for_target("multiple targets", entries_to_disable)
+            print("Targets block re-enabled automatically on exit.")
+            remove_multiple_disable_lock()
 
 
 if __name__ == "__main__":
