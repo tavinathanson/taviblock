@@ -18,15 +18,16 @@ def run_command(command):
         return False
 
 def main():
-    if len(sys.argv) == 1:
+    targets = sys.argv[1:]
+    if len(targets) == 0:
         # Just 'tbd' - disable all blocking
         return run_command(['taviblock', 'disable'])
-    elif len(sys.argv) == 2:
+    elif len(targets) == 1:
         # 'tbd slack' - disable single domain/section
-        return run_command(['taviblock', 'disable-single', '--target', sys.argv[1]])
-    elif len(sys.argv) <= 4:
+        return run_command(['taviblock', 'disable-single', '--target', targets[0]])
+    elif len(targets) <= 4:
         # 'tbd slack gmail' - disable multiple domains/sections
-        return run_command(['taviblock', 'disable-multiple', '--targets'] + sys.argv[1:])
+        return run_command(['taviblock', 'disable-multiple', '--targets'] + targets)
     else:
         print("Usage: sudo tbd [domain1 [domain2 [domain3 [domain4]]]]", file=sys.stderr)
         print("  sudo tbd              - Disable all blocking for 30 minutes", file=sys.stderr)
