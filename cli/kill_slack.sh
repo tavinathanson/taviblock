@@ -32,5 +32,27 @@ end if
 EOF
     fi
 
+    # Check if the blocking entry for netflix.com is present in /etc/hosts
+    if grep -q "127\.0\.0\.1[[:space:]]*netflix\.com" /etc/hosts; then
+        echo "$(date): netflix.com block is active; closing any Netflix tabs in Google Chrome."
+        osascript <<'EOF'
+if application "Google Chrome" is running then
+    tell application "Google Chrome"
+        repeat with w in windows
+            set netflixTabs to {}
+            repeat with t in tabs of w
+                if URL of t contains "netflix.com" then
+                    copy t to end of netflixTabs
+                end if
+            end repeat
+            repeat with t in netflixTabs
+                close t
+            end repeat
+        end repeat
+    end tell
+end if
+EOF
+    fi
+
     sleep 10
 done

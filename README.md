@@ -40,14 +40,19 @@ Edit the `config.txt` file to list the domains you want to block. Lines starting
 Example:
 
 ```ini
-[social]
+[ultra_distracting]
+netflix.com
+
+[default]
 facebook.com
 twitter.com
-
-[streaming]
-netflix.com
-youtube.com
 ```
+
+The `[ultra_distracting]` section is special - any domains listed here will have longer wait times when using the disable commands:
+- For `disable-single`: 30 minutes wait instead of 5 minutes
+- For `disable-multiple`: 30 minutes wait instead of 10 minutes
+
+This helps provide extra time to reconsider accessing highly distracting sites.
 
 ### 3. Install the CLI Tool
 To easily use the CLI tool from any location, create a symbolic link in your PATH:
@@ -220,28 +225,25 @@ launchctl unload ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
 
 - **Permissions**: Both the CLI tool and PF agent require root privileges. Make sure to run them with `
 
-## Slack Blocking using kill_slack.sh
+## Slack and Netflix Tab Management
 
-This project now includes a script that automatically terminates the Slack application when a Slack block is active in your /etc/hosts file. The script checks if the following entry (or a similar blocking entry) exists in /etc/hosts:
+This project includes scripts that automatically manage browser tabs and applications when certain blocks are active:
 
-```
-127.0.0.1 slack.com
-```
+1. **Slack Application**: The script automatically terminates the Slack application when a Slack block is active in your /etc/hosts file.
 
-If the block is active and Slack is running, the script will kill the Slack process.
+2. **Gmail Tabs**: When Gmail is blocked, any open Gmail tabs in Google Chrome are automatically closed.
 
-### Kill Slack Script Details
-
-- **Location:** `taviblock/cli/kill_slack.sh`
-- **Behavior:** The script continuously checks every 10 seconds if the blocking entry is present and, if so, terminates Slack if it is running.
+3. **Netflix Tabs**: When Netflix is blocked, any open Netflix tabs in Google Chrome are automatically closed.
 
 ### Setup Instructions
 
-1. **Add the Blocking Entry:**
-   Ensure your `/etc/hosts` file contains the following line when you want to block Slack:
+1. **Add the Blocking Entries:**
+   Ensure your `/etc/hosts` file contains the following lines when you want to block these services:
 
    ```
    127.0.0.1 slack.com
+   127.0.0.1 gmail.com
+   127.0.0.1 netflix.com
    ```
 
 2. **Make the Script Executable:**

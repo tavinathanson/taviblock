@@ -1,3 +1,6 @@
+[ultra_distracting]
+netflix.com
+
 [default]
 instagram.com
 reddit.com

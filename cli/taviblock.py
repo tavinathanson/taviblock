@@ -324,6 +324,13 @@ def remove_multiple_disable_lock():
         os.remove(MULTIPLE_LOCK_FILE)
 
 
+def is_ultra_distracting(domain, sections):
+    """Check if a domain is in the ultra_distracting section."""
+    if 'ultra_distracting' in sections:
+        return domain in sections['ultra_distracting']
+    return False
+
+
 def main():
     require_admin()
 
@@ -437,6 +444,11 @@ def main():
         else:
             print(f"Error: The target '{target}' does not exist in the config file.")
             sys.exit(1)
+
+        # Check if any of the domains are ultra-distracting
+        has_ultra_distracting = any(is_ultra_distracting(domain, sections) for domain in domains_to_disable)
+        wait_time = 30 if has_ultra_distracting else 5
+
         # Generate the union of block entries (IPv4 & IPv6) for the target domains
         entries_to_disable = set()
         for domain in domains_to_disable:
@@ -451,9 +463,9 @@ def main():
         create_single_disable_lock(target)
         try:
             print(
-                f"Disable-single command accepted for '{target}'. Waiting 5 minutes before disabling..."
+                f"Disable-single command accepted for '{target}'. Waiting {wait_time} minutes before disabling..."
             )
-            for minutes_left in range(5, 0, -1):
+            for minutes_left in range(wait_time, 0, -1):
                 print(
                     f"Waiting... {minutes_left} minute(s) until '{target}' is disabled."
                 )
@@ -501,6 +513,10 @@ def main():
                 print(f"Error: The target '{target}' does not exist in the config file.")
                 sys.exit(1)
 
+        # Check if any of the domains are ultra-distracting
+        has_ultra_distracting = any(is_ultra_distracting(domain, sections) for domain in all_domains_to_disable)
+        wait_time = 30 if has_ultra_distracting else 10
+
         # Generate the union of block entries (IPv4 & IPv6) for all target domains
         entries_to_disable = set()
         for domain in all_domains_to_disable:
@@ -517,8 +533,8 @@ def main():
         create_multiple_disable_lock(processed_targets)
         try:
             print(f"Disable-multiple command accepted for targets: {', '.join(processed_targets)}")
-            print("Waiting 10 minutes before disabling...")
-            for minutes_left in range(10, 0, -1):
+            print(f"Waiting {wait_time} minutes before disabling...")
+            for minutes_left in range(wait_time, 0, -1):
                 print(f"Waiting... {minutes_left} minute(s) until targets are disabled.")
                 time.sleep(60)
             remove_entries_for_target("multiple targets", entries_to_disable)
