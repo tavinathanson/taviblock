@@ -142,19 +142,47 @@ Available commands:
   sudo taviblock status
   ```
 
-- **disable-single**: Temporarily disable blocking for a specific domain or section for a fixed period of 30 minutes.
+- **disable-single**: Temporarily disable blocking for a specific domain or section for a fixed period of 30 minutes. The command will wait 5 minutes before disabling and then keep it disabled for 30 minutes.
 
   Example:
   ```bash
   sudo taviblock disable-single --target social --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
 
-- **restart**: Restart taviblock and related services.
+- **disable-multiple**: Temporarily disable blocking for up to 4 domains or sections. The command will wait 10 minutes before disabling and then keep them disabled for 30 minutes.
 
   Example:
   ```bash
-  sudo taviblock restart --config ~/drive/repos/taviblock_ws/taviblock/config.txt
+  sudo taviblock disable-multiple --targets social gmail --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
+
+### Quick Disable Shortcut (`tbd`)
+For convenience, a shortcut command `tbd` is provided to quickly disable blocking. This command supports three modes:
+
+1. **Disable All Blocking**:
+   ```bash
+   sudo tbd
+   ```
+   This is equivalent to `sudo taviblock disable`
+
+2. **Disable Single Domain/Section**:
+   ```bash
+   sudo tbd slack
+   ```
+   This is equivalent to `sudo taviblock disable-single --target slack`
+
+3. **Disable Multiple Domains/Sections** (up to 4):
+   ```bash
+   sudo tbd slack gmail
+   ```
+   This is equivalent to `sudo taviblock disable-multiple --targets slack gmail`
+
+To install the shortcut, create a symbolic link in your PATH:
+```bash
+sudo ln -s ~/drive/repos/taviblock_ws/taviblock/cli/tbd.py /usr/local/bin/tbd
+```
+
+Note: The shortcut command must be run with `sudo` as it needs root privileges to modify the hosts file.
 
 ### PF Firewall Agent (`pf_agent.py`)
 The PF agent updates firewall rules by performing the following steps:
