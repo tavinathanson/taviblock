@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tavinathanson.taviblock_restore</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/taviblock.py</string>
+        <string>block</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/tmp/taviblock_restore.err</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/taviblock_restore.out</string>
+</dict>
+</plist> 

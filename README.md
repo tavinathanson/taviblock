@@ -1,27 +1,27 @@
-TaviBlock & PF Blocker
+TaviBlock
 ========================
 
 ## Overview
-TaviBlock & PF Blocker is a self-control solution for blocking distracting websites on macOS. It uses a dual-layer approach:
+TaviBlock is a self-control solution for blocking distracting websites on macOS. It uses a hosts-based approach:
 
 - **Network-Level Blocking**: Modifies `/etc/hosts` to block specified domains.
-- **Firewall-Level Blocking**: Uses PF (Packet Filter) rules to block outgoing connections to IP addresses resolved from those domains.
+- **Application Control**: Automatically closes applications or browser tabs when their corresponding domains are blocked.
 
-This approach helps prevent access to distracting websites by interfering with both DNS resolution and direct connections at the firewall level.
+This approach helps prevent access to distracting websites and applications, making it harder to procrastinate.
 
 ## Repository Layout
 
 ```
 taviblock/
 ├── cli/
-│   ├── taviblock.py     # CLI tool to manage /etc/hosts blocking
-│   └── pf_agent.py      # PF Firewall Agent to block resolved IP addresses
-├── config.txt           # Configuration file containing list of domains to block
-└── README.md            # This file
+│   ├── taviblock.py         # CLI tool to manage /etc/hosts blocking
+│   └── kill_applications.sh # Script to kill applications or close browser tabs
+├── config.txt               # Configuration file containing list of domains to block
+└── README.md                # This file
 ```
 
 ## Prerequisites
-- macOS with PF (Packet Filter) enabled
+- macOS
 - Python 3
 - Root (administrator) privileges
 
@@ -60,53 +60,6 @@ To easily use the CLI tool from any location, create a symbolic link in your PAT
 ```bash
 sudo ln -s ~/drive/repos/taviblock_ws/taviblock/cli/taviblock.py /usr/local/bin/taviblock
 ```
-
-### 4. Set Up the PF Firewall Agent
-The PF Firewall Agent (`pf_agent.py`) continuously updates PF rules to block traffic to IP addresses resolved from the domains in your config file.
-
-Run the agent manually with:
-
-```bash
-sudo python3 ~/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py
-```
-
-#### Optional: Configure a Launch Daemon for the PF Agent
-To run the PF agent automatically on startup, use a Launch Daemon. Directly create the plist file at: `/Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist`
-with the following content:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.tavinathanson.taviblock_pf</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/bin/python3</string>
-        <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/taviblock_pf.out</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/taviblock_pf.err</string>
-</dict>
-</plist>
-```
-
-2. Set proper ownership:
-   ```bash
-   sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
-   ```
-
-3. Load the daemon with:
-   ```bash
-   sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.taviblock_pf.plist
-   ```
 
 ## Usage
 
@@ -189,73 +142,30 @@ sudo ln -s ~/drive/repos/taviblock_ws/taviblock/cli/tbd.py /usr/local/bin/tbd
 
 Note: The shortcut command must be run with `sudo` as it needs root privileges to modify the hosts file.
 
-### PF Firewall Agent (`pf_agent.py`)
-The PF agent updates firewall rules by performing the following steps:
+## Application and Tab Management
 
-1. **Reads the Config File**: Retrieves a list of domains from `config.txt` (ignoring comments and section headers).
-2. **DNS Resolution**: Resolves each domain to its current IP addresses.
-3. **Generate PF Rules**: Creates PF rules for each IP:
-   - IPv4: `block drop quick from any to <ip>`
-   - IPv6: `block drop quick inet6 from any to <ip>`
-4. **Update PF Rules**: Writes the rules to a temporary file and loads them using `pfctl` under the anchor `taviblock_pf`.
-5. **Continuous Update**: Repeats this process every 5 minutes.
+This project includes a script that automatically manages browser tabs and applications based on the blocked domains:
 
-To run the PF agent manually:
+1. **Chrome Tabs**: The script will close any Chrome tab containing a blocked domain from your config file.
 
-```bash
-sudo python3 ~/drive/repos/taviblock_ws/taviblock/cli/pf_agent.py
-```
+2. **Specific Applications**: The script can also terminate specific applications associated with blocked domains:
+   - Slack: When slack.com is blocked, the Slack desktop application is terminated.
+   - More applications can be added to the script as needed.
 
-To stop the agent, terminate the process or unload it if it's running as a launch agent:
-
-```bash
-launchctl unload ~/Library/LaunchAgents/com.tavinathanson.taviblock_pf.plist
-```
-
-## Troubleshooting
-
-- **Check PF Status**: Ensure PF is active with:
-  ```bash
-  sudo pfctl -s info
-  ```
-
-- **Rule Verification**: Inspect the temporary rule file at `/tmp/taviblock_pf.rules` to verify the generated rules.
-
-- **Log Files**: Check `/tmp/taviblock_pf.out` and `/tmp/taviblock_pf.err` for output and error messages if using a launch agent.
-
-- **Permissions**: Both the CLI tool and PF agent require root privileges. Make sure to run them with `
-
-## Slack and Netflix Tab Management
-
-This project includes scripts that automatically manage browser tabs and applications when certain blocks are active:
-
-1. **Slack Application**: The script automatically terminates the Slack application when a Slack block is active in your /etc/hosts file.
-
-2. **Gmail Tabs**: When Gmail is blocked, any open Gmail tabs in Google Chrome are automatically closed.
-
-3. **Netflix Tabs**: When Netflix is blocked, any open Netflix tabs in Google Chrome are automatically closed.
+The script automatically reads from your config.txt file, so any domain you add there will be automatically handled for Chrome tabs.
 
 ### Setup Instructions
 
-1. **Add the Blocking Entries:**
-   Ensure your `/etc/hosts` file contains the following lines when you want to block these services:
-
-   ```
-   127.0.0.1 slack.com
-   127.0.0.1 gmail.com
-   127.0.0.1 netflix.com
-   ```
-
-2. **Make the Script Executable:**
+1. **Make the Script Executable:**
 
    ```bash
-   chmod +x taviblock/cli/kill_slack.sh
+   chmod +x taviblock/cli/kill_applications.sh
    ```
 
-3. **Automate with a Launch Daemon:**
-   Run the kill_slack.sh script as a Launch Daemon.
+2. **Automate with a Launch Daemon:**
+   Run the kill_applications.sh script as a Launch Daemon.
 
-   Directly create a plist file at `/Library/LaunchDaemons/com.tavinathanson.killslack.plist` with the following content:
+   Directly create a plist file at `/Library/LaunchDaemons/com.tavinathanson.killapps.plist` with the following content:
 
    ```xml
    <?xml version="1.0" encoding="UTF-8"?>
@@ -263,10 +173,10 @@ This project includes scripts that automatically manage browser tabs and applica
    <plist version="1.0">
    <dict>
        <key>Label</key>
-       <string>com.tavinathanson.killslack</string>
+       <string>com.tavinathanson.killapps</string>
        <key>ProgramArguments</key>
        <array>
-           <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/kill_slack.sh</string>
+           <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/kill_applications.sh</string>
        </array>
        <key>RunAtLoad</key>
        <true/>
@@ -276,14 +186,14 @@ This project includes scripts that automatically manage browser tabs and applica
    </plist>
    ```
 
-2. Set proper ownership:
+3. Set proper ownership:
    ```bash
-   sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.killslack.plist
+   sudo chown root:wheel /Library/LaunchDaemons/com.tavinathanson.killapps.plist
    ```
 
-3. Load the daemon with:
+4. Load the daemon with:
    ```bash
-   sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.killslack.plist
+   sudo launchctl load /Library/LaunchDaemons/com.tavinathanson.killapps.plist
    ```
 
 ## Using Chrome with No Cache
@@ -308,4 +218,4 @@ When blocking rules are updated, cached data in the browser can sometimes allow 
    - Drag the new application to your Dock for easy access.
    - Optionally, change its icon to match the original Chrome icon for consistency.
 
-By using this custom launcher, you can ensure that Chrome operates without caching, providing a more reliable experience when using TaviBlock & PF Blocker.
+By using this custom launcher, you can ensure that Chrome operates without caching, providing a more reliable experience when using TaviBlock.
