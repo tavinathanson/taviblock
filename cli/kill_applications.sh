@@ -27,7 +27,10 @@ if application "Google Chrome" is running then
         repeat with w in windows
             set matchingTabs to {}
             repeat with t in tabs of w
-                if URL of t contains "$domain" then
+                set tabURL to URL of t
+                # Exact domain matching - checks if the domain is exactly in the URL
+                # This prevents subdomains of different services from matching (e.g., something.sharepoint.com won't match microsoft.com)
+                if tabURL contains "://$domain" or tabURL contains "://www.$domain" then
                     copy t to end of matchingTabs
                 end if
             end repeat
