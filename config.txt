@@ -25,6 +25,7 @@ admin.17hats.com
 photos.google.com
 ccarnet.org
 nextdoor.com
+news.ycombinator.com
 
 [gmail]
 www.gmail.com
@@ -98,3 +99,11 @@ api.slack.com
 mailchimp.com
 login.mailchimp.com
 us11.admin.mailchimp.com
+
+[ads]
+ads.google.com
+business.facebook.com
+adsmanager.facebook.com
+business.google.com
+facebook.com
+instagram.com
