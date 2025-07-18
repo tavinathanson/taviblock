@@ -23,6 +23,9 @@ def main():
         # Just 'tbd' - disable all blocking
         return run_command(['taviblock', 'disable'])
     elif len(targets) == 1:
+        # Check if the single target is 'bypass'
+        if targets[0] == 'bypass':
+            return run_command(['taviblock', 'bypass'])
         # 'tbd slack' - disable single domain/section
         return run_command(['taviblock', 'disable-single', '--target', targets[0]])
     elif len(targets) <= 4:
@@ -31,6 +34,7 @@ def main():
     else:
         print("Usage: sudo tbd [domain1 [domain2 [domain3 [domain4]]]]", file=sys.stderr)
         print("  sudo tbd              - Disable all blocking for 30 minutes", file=sys.stderr)
+        print("  sudo tbd bypass       - Immediately disable all blocking for 5 minutes (once per hour)", file=sys.stderr)
         print("  sudo tbd domain       - Disable blocking for a single domain/section", file=sys.stderr)
         print("  sudo tbd d1 d2 d3 d4  - Disable blocking for up to 4 domains/sections", file=sys.stderr)
         return False

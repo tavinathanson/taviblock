@@ -17,6 +17,7 @@ CONFIG_FILE_DEFAULT = str(Path(__file__).resolve().parent.parent / "config.txt")
 
 LOCK_FILE = "/tmp/disable_single.lock"
 MULTIPLE_LOCK_FILE = "/tmp/disable_multiple.lock"
+BYPASS_LOCK_FILE = "/tmp/bypass.lock"
 
 
 def require_admin():
@@ -324,6 +325,37 @@ def remove_multiple_disable_lock():
         os.remove(MULTIPLE_LOCK_FILE)
 
 
+def check_bypass_lock():
+    """Return True if bypass can be used (no active bypass or cooldown expired); False otherwise."""
+    if not os.path.exists(BYPASS_LOCK_FILE):
+        return True
+    
+    # Check if cooldown has expired
+    try:
+        with open(BYPASS_LOCK_FILE, 'r') as f:
+            timestamp = float(f.read().strip())
+        
+        # Check if 1 hour (3600 seconds) has passed since the bypass was used
+        current_time = time.time()
+        if current_time - timestamp >= 3600:  # 1 hour cooldown
+            os.remove(BYPASS_LOCK_FILE)
+            return True
+        else:
+            remaining_minutes = int((3600 - (current_time - timestamp)) / 60) + 1
+            print(f"Bypass is on cooldown. {remaining_minutes} minute(s) remaining.")
+            return False
+    except (ValueError, IOError):
+        # If file is corrupted or unreadable, remove it and allow bypass
+        os.remove(BYPASS_LOCK_FILE)
+        return True
+
+
+def create_bypass_lock():
+    """Create a lock file to mark when bypass was last used."""
+    with open(BYPASS_LOCK_FILE, "w") as f:
+        f.write(str(time.time()))
+
+
 def is_ultra_distracting(domain, sections):
     """Check if a domain is in the ultra_distracting section."""
     if 'ultra_distracting' in sections:
@@ -393,6 +425,15 @@ def main():
         help="Up to 4 domains/subdomains or section names to disable",
     )
     parser_disable_multiple.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
+
+    # 'bypass' command: immediately disable all blocking for 5 minutes, once per hour
+    parser_bypass = subparsers.add_parser(
+        "bypass",
+        help="Immediately disable all blocking for 5 minutes (once per hour)",
+    )
+    parser_bypass.add_argument(
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
 
@@ -546,6 +587,29 @@ def main():
             add_entries_for_target("multiple targets", entries_to_disable)
             print("Targets block re-enabled automatically on exit.")
             remove_multiple_disable_lock()
+    elif args.command == "bypass":
+        if not check_bypass_lock():
+            sys.exit(1)
+        
+        # Check if other disable operations are active
+        if not check_single_disable_lock():
+            print("A single-domain disable is active. Cannot use bypass.")
+            sys.exit(1)
+        if not check_multiple_disable_lock():
+            print("A multiple-domain disable is active. Cannot use bypass.")
+            sys.exit(1)
+        
+        create_bypass_lock()
+        try:
+            print("Bypass activated! All blocking disabled for 5 minutes.")
+            remove_blocking()
+            for minutes_left in range(5, 0, -1):
+                print(f"Re-enabling all blocking in {minutes_left} minute(s)...")
+                time.sleep(60)
+        finally:
+            domains = read_config(args.config)
+            apply_blocking(domains)
+            print("All blocking re-enabled automatically. Bypass is now on 1-hour cooldown.")
 
 
 if __name__ == "__main__":
