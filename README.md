@@ -114,8 +114,15 @@ Available commands:
   sudo taviblock disable-multiple --targets social gmail --config ~/drive/repos/taviblock_ws/taviblock/config.txt
   ```
 
+- **bypass**: Immediately disable all blocking for 5 minutes. Can only be used once per hour (enforced by cooldown). No wait time - blocking is removed instantly.
+
+  Example:
+  ```bash
+  sudo taviblock bypass --config ~/drive/repos/taviblock_ws/taviblock/config.txt
+  ```
+
 ### Quick Disable Shortcut (`tbd`)
-For convenience, a shortcut command `tbd` is provided to quickly disable blocking. This command supports three modes:
+For convenience, a shortcut command `tbd` is provided to quickly disable blocking. This command supports four modes:
 
 1. **Disable All Blocking**:
    ```bash
@@ -123,13 +130,19 @@ For convenience, a shortcut command `tbd` is provided to quickly disable blockin
    ```
    This is equivalent to `sudo taviblock disable`
 
-2. **Disable Single Domain/Section**:
+2. **Bypass (Emergency Disable)**:
+   ```bash
+   sudo tbd bypass
+   ```
+   This is equivalent to `sudo taviblock bypass` - immediately disables all blocking for 5 minutes (once per hour)
+
+3. **Disable Single Domain/Section**:
    ```bash
    sudo tbd slack
    ```
    This is equivalent to `sudo taviblock disable-single --target slack`
 
-3. **Disable Multiple Domains/Sections** (up to 4):
+4. **Disable Multiple Domains/Sections** (up to 4):
    ```bash
    sudo tbd slack gmail
    ```
@@ -141,6 +154,19 @@ sudo ln -s ~/drive/repos/taviblock_ws/taviblock/cli/tbd.py /usr/local/bin/tbd
 ```
 
 Note: The shortcut command must be run with `sudo` as it needs root privileges to modify the hosts file.
+
+### Disable Options Summary
+
+TaviBlock provides several disable options designed with different levels of friction to help you make deliberate choices about when to access blocked content:
+
+| Command | Wait Time | Duration | Frequency | Best For |
+|---------|-----------|----------|-----------|----------|
+| `bypass` | None (immediate) | 5 minutes | Once per hour | Emergency access, urgent tasks |
+| `disable-single` | 5 min (30 min for ultra-distracting) | 30 minutes | Unlimited | Accessing one specific site |
+| `disable-multiple` | 10 min (30 min for ultra-distracting) | 30 minutes | Unlimited | Accessing multiple related sites |
+| `disable` | 30 minutes | 30 minutes | Unlimited | Complete break from all blocking |
+
+The bypass command is designed for situations where you need immediate access but don't want to completely circumvent the friction-based system. Use it sparingly for genuine emergencies or urgent work needs.
 
 ## Application and Tab Management
 
