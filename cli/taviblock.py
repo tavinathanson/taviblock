@@ -437,6 +437,15 @@ def main():
         "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
     )
 
+    # 'peek' command: disable all blocking for 60 seconds after a 60 second wait
+    parser_peek = subparsers.add_parser(
+        "peek",
+        help="Disable all blocking for 60 seconds after a 60 second wait (no usage restrictions)",
+    )
+    parser_peek.add_argument(
+        "--config", type=str, default=CONFIG_FILE_DEFAULT, help="Path to config file"
+    )
+
     args = parser.parse_args()
 
     if args.command == "block":
@@ -610,6 +619,31 @@ def main():
             domains = read_config(args.config)
             apply_blocking(domains)
             print("All blocking re-enabled automatically. Bypass is now on 1-hour cooldown.")
+    elif args.command == "peek":
+        # Check if other disable operations are active
+        if not check_single_disable_lock():
+            print("A single-domain disable is active. Cannot use peek.")
+            sys.exit(1)
+        if not check_multiple_disable_lock():
+            print("A multiple-domain disable is active. Cannot use peek.")
+            sys.exit(1)
+        
+        try:
+            print("Peek command accepted. Waiting 60 seconds before disabling all blocking...")
+            for seconds_left in range(60, 0, -10):
+                print(f"Waiting... {seconds_left} second(s) remaining until unblock.")
+                time.sleep(10)
+            
+            print("All blocking disabled for 60 seconds!")
+            remove_blocking()
+            
+            for seconds_left in range(60, 0, -10):
+                print(f"Re-enabling all blocking in {seconds_left} second(s)...")
+                time.sleep(10)
+        finally:
+            domains = read_config(args.config)
+            apply_blocking(domains)
+            print("All blocking re-enabled automatically.")
 
 
 if __name__ == "__main__":
