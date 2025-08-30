@@ -7,7 +7,9 @@ A streamlined self-control tool for blocking distracting websites on macOS.
 
 - **Clock-based timing**: All timers use real time and persist through sleep/restarts
 - **SQLite state management**: All state stored in a single database - no temporary files
-- **Background daemon**: Automatically updates `/etc/hosts` based on database state
+- **Background daemon**: Automatically updates `/etc/hosts` and closes blocked tabs/apps
+- **Chrome tab closing**: Automatically closes tabs for blocked domains
+- **App termination**: Kills apps like Slack when their domains are blocked
 - **Overlapping unblocks**: Multiple independent sessions can run simultaneously
 - **Simple command**: Just `block` for everything
 
