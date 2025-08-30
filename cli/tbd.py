@@ -1,47 +1,55 @@
 #!/usr/bin/env python3
-import sys
-import subprocess
-import os
+"""
+TBD - Taviblock Quick Commands
 
-def run_command(command):
-    """Run a command and return its output."""
-    try:
-        # Run command without capturing output so it displays directly
-        result = subprocess.run(
-            command,
-            stdout=None,
-            stderr=None
-        )
-        return result.returncode == 0
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return False
+Usage:
+    sudo tbd                    # Show status
+    sudo tbd gmail              # Unblock gmail 
+    sudo tbd gmail slack        # Unblock multiple targets
+    sudo tbd bypass             # Emergency 5-minute unblock
+    sudo tbd peek               # Quick 60-second peek
+    sudo tbd cancel             # Cancel all sessions
+    sudo tbd cancel 42          # Cancel session 42
+"""
+
+import sys
+import os
+import subprocess
 
 def main():
-    targets = sys.argv[1:]
-    if len(targets) == 0:
-        # Just 'tbd' - disable all blocking
-        return run_command(['taviblock', 'disable'])
-    elif len(targets) == 1:
-        # Check if the single target is 'bypass'
-        if targets[0] == 'bypass':
-            return run_command(['taviblock', 'bypass'])
-        # Check if the single target is 'peek'
-        if targets[0] == 'peek':
-            return run_command(['taviblock', 'peek'])
-        # 'tbd slack' - disable single domain/section
-        return run_command(['taviblock', 'disable-single', '--target', targets[0]])
-    elif len(targets) <= 4:
-        # 'tbd slack gmail' - disable multiple domains/sections
-        return run_command(['taviblock', 'disable-multiple', '--targets'] + targets)
+    # Check for root
+    if os.geteuid() != 0:
+        print("This command must be run with sudo")
+        sys.exit(1)
+    
+    # Just use the taviblock command directly
+    args = sys.argv[1:]
+    
+    if not args:
+        # No arguments = show status
+        subprocess.run(['taviblock', 'status'])
+    
+    elif args[0] == 'bypass':
+        # Bypass command
+        subprocess.run(['taviblock', 'bypass'])
+    
+    elif args[0] == 'peek':
+        # Peek command
+        subprocess.run(['taviblock', 'peek'])
+    
+    elif args[0] == 'cancel':
+        # Cancel command
+        if len(args) > 1:
+            # Cancel specific session
+            subprocess.run(['taviblock', 'cancel', args[1]])
+        else:
+            # Cancel all
+            subprocess.run(['taviblock', 'cancel', '--all'])
+    
     else:
-        print("Usage: sudo tbd [domain1 [domain2 [domain3 [domain4]]]]", file=sys.stderr)
-        print("  sudo tbd              - Disable all blocking for 30 minutes", file=sys.stderr)
-        print("  sudo tbd bypass       - Immediately disable all blocking for 5 minutes (once per hour)", file=sys.stderr)
-        print("  sudo tbd peek         - Disable all blocking for 60 seconds after 60 second wait", file=sys.stderr)
-        print("  sudo tbd domain       - Disable blocking for a single domain/section", file=sys.stderr)
-        print("  sudo tbd d1 d2 d3 d4  - Disable blocking for up to 4 domains/sections", file=sys.stderr)
-        return False
+        # Assume it's an unblock command with targets
+        cmd = ['taviblock', 'unblock'] + args
+        subprocess.run(cmd)
 
-if __name__ == "__main__":
-    sys.exit(0 if main() else 1) 
+if __name__ == '__main__':
+    main() 

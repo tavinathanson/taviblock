@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python3 -m cli.taviblock:*)",
       "Bash(sudo python3 -m cli.taviblock:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }

@@ -1,27 +1,41 @@
 #!/usr/bin/env python3
+"""
+Block - Streamlined domain blocking tool
+
+Usage:
+    block                         # Show status
+    block gmail                   # Unblock gmail
+    block gmail slack             # Unblock multiple
+    block bypass                  # Emergency 5-min unblock
+    block peek                    # Quick 60-second peek
+    block cancel                  # Cancel all sessions
+    block cancel 42               # Cancel specific session
+    block daemon logs             # View logs
+    block unblock gmail -w 0      # Advanced: no wait
+"""
+
 import argparse
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-import json
 import subprocess
 
+# Add cli directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db
 
-# Path to the system hosts file on macOS
+# Constants
 HOSTS_PATH = "/etc/hosts"
-# Markers to delimit our managed block section in /etc/hosts
 BLOCKER_START = "# BLOCKER START"
 BLOCKER_END = "# BLOCKER END"
-# Default config file location
 CONFIG_FILE_DEFAULT = str(Path(__file__).resolve().parent.parent / "config.txt")
 
 
 def require_admin():
     """Ensure the script is run as root."""
     if os.geteuid() != 0:
-        print("This script must be run as root. Try running with sudo.")
+        print("This command requires sudo. Please run: sudo block ...")
         sys.exit(1)
 
 
@@ -105,14 +119,53 @@ def format_time_remaining(seconds):
         return f"{hours} hour{'s' if hours != 1 else ''}"
 
 
-def cmd_unblock(args):
+def cmd_status(args):
+    """Show current status."""
+    active_sessions = db.get_active_sessions()
+    pending_sessions = db.get_pending_sessions()
+    
+    if not active_sessions and not pending_sessions:
+        print("All domains are blocked")
+        return
+    
+    if pending_sessions:
+        print("PENDING SESSIONS:")
+        for session in pending_sessions:
+            wait_remaining = session['wait_until'] - datetime.now().timestamp()
+            print(f"  [{session['id']}] {session['session_type']}:")
+            print(f"    Domains: {', '.join(session['domains'])}")
+            print(f"    Starts in: {format_time_remaining(wait_remaining)}")
+            print(f"    Duration: {format_time_remaining(session['end_time'] - session['wait_until'])}")
+        print()
+    
+    if active_sessions:
+        print("ACTIVE SESSIONS:")
+        for session in active_sessions:
+            remaining = session['end_time'] - datetime.now().timestamp()
+            print(f"  [{session['id']}] {session['session_type']}:")
+            print(f"    Domains: {', '.join(session['domains'])}")
+            print(f"    Remaining: {format_time_remaining(remaining)}")
+        print()
+        
+        all_unblocked = db.get_all_unblocked_domains()
+        print(f"Currently unblocked: {', '.join(sorted(all_unblocked))}")
+    
+    available, remaining = db.check_bypass_cooldown()
+    if not available:
+        print(f"\nBypass cooldown: {format_time_remaining(remaining)} remaining")
+
+
+def cmd_unblock(args, targets=None):
     """Unblock specified domains/sections."""
+    if targets is None:
+        targets = args.targets
+        
     sections = read_config_sections(args.config)
     domains_list = read_config(args.config)
     
     # Process targets
     all_domains = set()
-    for target in args.targets:
+    for target in targets:
         target = target.strip()
         
         # Check sections
@@ -136,30 +189,32 @@ def cmd_unblock(args):
     # Determine wait time
     has_ultra = any(is_ultra_distracting(d, sections) for d in all_domains)
     
-    if args.wait is None:
-        if len(args.targets) == 1:
-            args.wait = 30 if has_ultra else 5
+    wait = getattr(args, 'wait', None)
+    if wait is None:
+        if len(targets) == 1:
+            wait = 30 if has_ultra else 5
         else:
-            args.wait = 30 if has_ultra else 10
+            wait = 30 if has_ultra else 10
     
-    if args.duration is None:
-        args.duration = 30
+    duration = getattr(args, 'duration', None)
+    if duration is None:
+        duration = 30
     
     # Create session
     session_id = db.add_unblock_session(
         list(all_domains),
-        args.duration,
-        args.wait,
-        'multiple' if len(args.targets) > 1 else 'single'
+        duration,
+        wait,
+        'multiple' if len(targets) > 1 else 'single'
     )
     
     print(f"Unblock session created (ID: {session_id})")
-    print(f"Targets: {', '.join(args.targets)}")
-    print(f"Wait: {args.wait} minutes")
-    print(f"Duration: {args.duration} minutes")
+    print(f"Targets: {', '.join(targets)}")
+    print(f"Wait: {wait} minutes")
+    print(f"Duration: {duration} minutes")
     
-    if args.wait > 0:
-        print(f"\nDomains will be unblocked in {args.wait} minutes")
+    if wait > 0:
+        print(f"\nDomains will be unblocked in {wait} minutes")
     else:
         print("\nDomains are now unblocked")
 
@@ -202,52 +257,19 @@ def cmd_peek(args):
     print("All domains will be unblocked in 60 seconds for 60 seconds")
 
 
-def cmd_status(args):
-    """Show current status."""
-    active_sessions = db.get_active_sessions()
-    pending_sessions = db.get_pending_sessions()
-    
-    if not active_sessions and not pending_sessions:
-        print("All domains are blocked")
-        return
-    
-    if pending_sessions:
-        print("PENDING SESSIONS:")
-        for session in pending_sessions:
-            wait_remaining = session['wait_until'] - datetime.now().timestamp()
-            print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
-            print(f"    Starts in: {format_time_remaining(wait_remaining)}")
-            print(f"    Duration: {format_time_remaining(session['end_time'] - session['wait_until'])}")
-        print()
-    
-    if active_sessions:
-        print("ACTIVE SESSIONS:")
-        for session in active_sessions:
-            remaining = session['end_time'] - datetime.now().timestamp()
-            print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
-            print(f"    Remaining: {format_time_remaining(remaining)}")
-        print()
-        
-        all_unblocked = db.get_all_unblocked_domains()
-        print(f"Currently unblocked: {', '.join(sorted(all_unblocked))}")
-    
-    available, remaining = db.check_bypass_cooldown()
-    if not available:
-        print(f"\nBypass cooldown: {format_time_remaining(remaining)} remaining")
-
-
-def cmd_cancel(args):
+def cmd_cancel(args, session_id=None):
     """Cancel session(s)."""
-    if args.session_id:
-        session = db.get_session_info(args.session_id)
+    if session_id is None:
+        session_id = getattr(args, 'session_id', None)
+        
+    if session_id:
+        session = db.get_session_info(session_id)
         if not session:
-            print(f"Session {args.session_id} not found")
+            print(f"Session {session_id} not found")
             sys.exit(1)
         
-        db.cancel_session(args.session_id)
-        print(f"Cancelled session {args.session_id}")
+        db.cancel_session(session_id)
+        print(f"Cancelled session {session_id}")
     else:
         active = db.get_active_sessions()
         pending = db.get_pending_sessions()
@@ -293,31 +315,78 @@ def cmd_daemon(args):
 def main():
     require_admin()
     
+    # Initialize database
+    db.init_db()
+    
+    # Handle simple command patterns first
+    args = sys.argv[1:]
+    
+    if not args:
+        # No args = status
+        cmd_status(argparse.Namespace(config=CONFIG_FILE_DEFAULT))
+        return
+    
+    # Single special commands
+    if len(args) == 1:
+        if args[0] == 'bypass':
+            cmd_bypass(argparse.Namespace(config=CONFIG_FILE_DEFAULT))
+            return
+        elif args[0] == 'peek':
+            cmd_peek(argparse.Namespace(config=CONFIG_FILE_DEFAULT))
+            return
+        elif args[0] == 'status':
+            cmd_status(argparse.Namespace(config=CONFIG_FILE_DEFAULT))
+            return
+        elif args[0] == 'cancel':
+            cmd_cancel(argparse.Namespace(config=CONFIG_FILE_DEFAULT), None)
+            return
+    
+    # Cancel with ID
+    if len(args) == 2 and args[0] == 'cancel':
+        try:
+            session_id = int(args[1])
+            cmd_cancel(argparse.Namespace(config=CONFIG_FILE_DEFAULT), session_id)
+            return
+        except ValueError:
+            pass
+    
+    # Daemon commands
+    if args[0] == 'daemon' and len(args) >= 2:
+        cmd_daemon(argparse.Namespace(action=args[1]))
+        return
+    
+    # Full parser for complex commands
     parser = argparse.ArgumentParser(
-        description="Taviblock - Domain blocking with clock-based unblock sessions",
+        description="Block - Streamlined domain blocking",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  sudo taviblock unblock gmail              # Unblock gmail (5 min wait, 30 min duration)
-  sudo taviblock unblock gmail slack        # Unblock multiple targets
-  sudo taviblock unblock gmail -w 0 -d 60   # Unblock immediately for 60 minutes
-  sudo taviblock bypass                     # Emergency 5-minute unblock (once per hour)
-  sudo taviblock peek                       # Quick 60-second peek
-  sudo taviblock status                     # Show current status
-  sudo taviblock cancel 42                  # Cancel specific session
-  sudo taviblock cancel --all               # Cancel all sessions
+  block                    # Show status
+  block gmail              # Unblock gmail
+  block gmail slack        # Unblock multiple
+  block bypass             # Emergency 5-min unblock
+  block peek               # Quick 60-second peek
+  block cancel             # Cancel all sessions
+  block cancel 42          # Cancel specific session
+  block daemon logs        # View logs
+  block unblock gmail -w 0 # Advanced: no wait
 """
     )
     
-    subparsers = parser.add_subparsers(dest='command', required=True, help='Command to run')
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
     
-    # unblock
+    # unblock (explicit)
     parser_unblock = subparsers.add_parser('unblock', help='Unblock domains/sections')
     parser_unblock.add_argument('targets', nargs='+', help='Domains or sections to unblock')
     parser_unblock.add_argument('-w', '--wait', type=int, help='Wait time in minutes')
     parser_unblock.add_argument('-d', '--duration', type=int, help='Duration in minutes')
     parser_unblock.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
     parser_unblock.set_defaults(func=cmd_unblock)
+    
+    # status
+    parser_status = subparsers.add_parser('status', help='Show status')
+    parser_status.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
+    parser_status.set_defaults(func=cmd_status)
     
     # bypass
     parser_bypass = subparsers.add_parser('bypass', help='Emergency 5-min unblock')
@@ -328,10 +397,6 @@ Examples:
     parser_peek = subparsers.add_parser('peek', help='Quick 60-second peek')
     parser_peek.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
     parser_peek.set_defaults(func=cmd_peek)
-    
-    # status
-    parser_status = subparsers.add_parser('status', help='Show status')
-    parser_status.set_defaults(func=cmd_status)
     
     # cancel
     parser_cancel = subparsers.add_parser('cancel', help='Cancel sessions')
@@ -344,13 +409,18 @@ Examples:
     parser_daemon.add_argument('action', choices=['start', 'stop', 'restart', 'logs'])
     parser_daemon.set_defaults(func=cmd_daemon)
     
-    args = parser.parse_args()
+    # If no recognized subcommand, assume it's targets for unblock
+    if args and args[0] not in ['unblock', 'status', 'bypass', 'peek', 'cancel', 'daemon']:
+        # Treat as unblock targets
+        cmd_unblock(argparse.Namespace(config=CONFIG_FILE_DEFAULT, wait=None, duration=None), args)
+        return
     
-    # Initialize database
-    db.init_db()
-    
-    # Execute command
-    args.func(args)
+    # Parse and execute
+    parsed_args = parser.parse_args()
+    if hasattr(parsed_args, 'func'):
+        parsed_args.func(parsed_args)
+    else:
+        parser.print_help()
 
 
 if __name__ == '__main__':
