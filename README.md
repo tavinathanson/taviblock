@@ -83,6 +83,7 @@ block daemon restart              # Restart daemon
 
 Block is designed to fail closed (keep blocking) rather than fail open:
 
+- **Starts on boot**: The daemon automatically starts when your Mac boots up
 - **Daemon auto-restarts**: If the daemon crashes, macOS automatically restarts it
 - **Blocks restored on shutdown**: When the daemon stops, it restores full blocking first
 - **Auto-start on command**: Running any `block` command will start the daemon if it's not running

@@ -56,7 +56,7 @@ chown root:wheel /Library/LaunchDaemons/com.taviblock.daemon.plist
 chmod 644 /Library/LaunchDaemons/com.taviblock.daemon.plist
 
 echo "7. Starting daemon..."
-launchctl load /Library/LaunchDaemons/com.taviblock.daemon.plist
+launchctl load -w /Library/LaunchDaemons/com.taviblock.daemon.plist
 
 echo "8. Setting up passwordless sudo..."
 # Get the actual user who ran sudo (not root)
