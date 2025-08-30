@@ -1,0 +1,9 @@
+# Sudoers configuration for Block
+# Allows running block command without password
+# 
+# To install:
+#   sudo cp block_sudoers /etc/sudoers.d/block
+#   sudo chmod 440 /etc/sudoers.d/block
+
+# Replace 'tavi' with your username if different
+tavi ALL=(ALL) NOPASSWD: /usr/local/bin/block

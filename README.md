@@ -5,9 +5,9 @@ A streamlined self-control tool for blocking distracting websites on macOS.
 
 ## Features
 
-- **Clock-based timing**: Timers persist through sleep/restarts
-- **Central state management**: SQLite database tracks all sessions
-- **Background daemon**: Automatically updates `/etc/hosts`
+- **Clock-based timing**: All timers use real time and persist through sleep/restarts
+- **SQLite state management**: All state stored in a single database - no temporary files
+- **Background daemon**: Automatically updates `/etc/hosts` based on database state
 - **Overlapping unblocks**: Multiple independent sessions can run simultaneously
 - **Simple command**: Just `block` for everything
 
@@ -25,6 +25,8 @@ sudo ./setup.sh
 ./add_alias.sh
 source ~/.zshrc
 ```
+
+That's it! The setup script automatically configures passwordless sudo for the block command.
 
 ### 3. Configure Domains
 Edit `config.txt` to list domains to block:
@@ -74,7 +76,8 @@ block daemon restart              # Restart daemon
 1. **Everything is blocked by default** - The daemon ensures all configured domains are blocked
 2. **Unblock sessions temporarily allow access** - Each session has a wait time and duration
 3. **Sessions can overlap** - Unblock gmail, then later unblock slack - both stay unblocked independently
-4. **State persists** - Survives restarts, sleep, and terminal closures
+4. **All state in SQLite** - No temporary files, no lock files - everything is in `/var/lib/taviblock/state.db`
+5. **State persists** - Survives restarts, sleep, terminal closures, and system crashes
 
 ## Wait Times
 

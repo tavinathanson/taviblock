@@ -186,6 +186,27 @@ def cmd_unblock(args, targets=None):
         print("No valid domains found")
         sys.exit(1)
     
+    # Check if these domains are already in active or pending sessions
+    active_sessions = db.get_active_sessions()
+    pending_sessions = db.get_pending_sessions()
+    
+    # Check each domain
+    for session_list, session_type in [(active_sessions, "active"), (pending_sessions, "pending")]:
+        for session in session_list:
+            # Check if all requested domains are already in this session
+            if all(domain in session['domains'] for domain in all_domains):
+                if session_type == "active":
+                    remaining = session['end_time'] - datetime.now().timestamp()
+                    print(f"'{', '.join(targets)}' already unblocked in session {session['id']}")
+                    print(f"Time remaining: {format_time_remaining(remaining)}")
+                else:
+                    wait_remaining = session['wait_until'] - datetime.now().timestamp()
+                    print(f"'{', '.join(targets)}' already pending in session {session['id']}")
+                    print(f"Starts in: {format_time_remaining(wait_remaining)}")
+                    duration = session['end_time'] - session['wait_until']
+                    print(f"Duration: {format_time_remaining(duration)}")
+                return
+    
     # Determine wait time
     has_ultra = any(is_ultra_distracting(d, sections) for d in all_domains)
     

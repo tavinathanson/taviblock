@@ -58,6 +58,26 @@ chmod 644 /Library/LaunchDaemons/com.taviblock.daemon.plist
 echo "7. Starting daemon..."
 launchctl load /Library/LaunchDaemons/com.taviblock.daemon.plist
 
+echo "8. Setting up passwordless sudo..."
+# Get the actual user who ran sudo (not root)
+ACTUAL_USER="${SUDO_USER:-$USER}"
+echo "Configuring passwordless sudo for user: $ACTUAL_USER"
+
+# Create sudoers.d directory if it doesn't exist
+mkdir -p /etc/sudoers.d
+
+# Create the sudoers file for block
+echo "$ACTUAL_USER ALL=(ALL) NOPASSWD: /usr/local/bin/block" > /etc/sudoers.d/block
+chmod 440 /etc/sudoers.d/block
+
+# Verify the file is valid
+if visudo -c -f /etc/sudoers.d/block >/dev/null 2>&1; then
+    echo "✓ Passwordless sudo configured successfully"
+else
+    echo "✗ Error configuring sudoers - removing invalid file"
+    rm -f /etc/sudoers.d/block
+fi
+
 echo ""
 echo "=== Setup Complete! ==="
 echo ""
