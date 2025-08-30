@@ -79,6 +79,20 @@ block daemon restart              # Restart daemon
 4. **All state in SQLite** - No temporary files, no lock files - everything is in `/var/lib/taviblock/state.db`
 5. **State persists** - Survives restarts, sleep, terminal closures, and system crashes
 
+## Resilient Design
+
+Block is designed to fail closed (keep blocking) rather than fail open:
+
+- **Daemon auto-restarts**: If the daemon crashes, macOS automatically restarts it
+- **Blocks restored on shutdown**: When the daemon stops, it restores full blocking first
+- **Auto-start on command**: Running any `block` command will start the daemon if it's not running
+- **No easy bypass**: You can't just kill the daemon to unblock everything - it blocks on exit
+
+To completely disable blocking, you would need to:
+1. Stop the daemon: `sudo launchctl unload /Library/LaunchDaemons/com.taviblock.daemon.plist`
+2. Manually edit `/etc/hosts` to remove the block entries
+3. Even then, any `block` command will restart everything
+
 ## Wait Times
 
 | Command | Regular Domains | Ultra Distracting |

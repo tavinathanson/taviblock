@@ -333,11 +333,35 @@ def cmd_daemon(args):
             print(f"Log file not found: {log_path}")
 
 
+def check_daemon_running():
+    """Check if the daemon is running and start it if not."""
+    result = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
+    if 'com.taviblock.daemon' not in result.stdout:
+        print("Warning: Block daemon not running. Starting it now...")
+        subprocess.run(['launchctl', 'load', '/Library/LaunchDaemons/com.taviblock.daemon.plist'],
+                      stderr=subprocess.DEVNULL)
+        # Give it a moment to start
+        import time
+        time.sleep(2)
+        
+        # Check again
+        result = subprocess.run(['launchctl', 'list'], capture_output=True, text=True)
+        if 'com.taviblock.daemon' not in result.stdout:
+            print("ERROR: Failed to start daemon. Blocking may not work correctly.")
+            print("Try: sudo block daemon restart")
+            return False
+    return True
+
+
 def main():
     require_admin()
     
     # Initialize database
     db.init_db()
+    
+    # Check daemon is running (except for daemon commands)
+    if len(sys.argv) < 2 or (len(sys.argv) >= 2 and sys.argv[1] != 'daemon'):
+        check_daemon_running()
     
     # Handle simple command patterns first
     args = sys.argv[1:]
