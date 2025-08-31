@@ -8,8 +8,11 @@ A streamlined self-control tool for blocking distracting websites on macOS.
 - **Clock-based timing**: All timers use real time and persist through sleep/restarts
 - **SQLite state management**: All state stored in a single database - no temporary files
 - **Background daemon**: Automatically updates `/etc/hosts` and closes blocked tabs/apps
-- **Chrome tab closing**: Automatically closes tabs for blocked domains
+- **Chrome tab closing**: Automatically closes tabs for blocked domains every 10 seconds
 - **App termination**: Kills apps like Slack when their domains are blocked
+- **Session protection**: Prevents duplicate sessions for domains already unblocked
+- **Session limits**: Maximum 4 concurrent sessions to prevent abuse
+- **Smart time display**: Shows seconds for short durations (≤5 minutes)
 - **Overlapping unblocks**: Multiple independent sessions can run simultaneously
 - **Simple command**: Just `block` for everything
 
@@ -50,6 +53,10 @@ twitter.com
 facebook.com
 ```
 
+**Special sections:**
+- `[ultra_distracting]`: Domains here have longer wait times (30 min instead of 5-10 min)
+- Custom sections like `[gmail]` or `[slack]`: Group related domains for easy unblocking
+
 ## Usage
 
 ### Basic Commands
@@ -58,17 +65,23 @@ facebook.com
 block                    # Show status
 block gmail              # Unblock gmail (5 min wait, 30 min duration)
 block gmail slack        # Unblock multiple sections
+block gmail -r 3         # Replace session 3 with gmail
 block bypass             # Emergency 5-min unblock (once per hour)
 block peek               # 60-second peek after 60-second wait
 block cancel             # Cancel all sessions
 block cancel 42          # Cancel specific session
 ```
 
+**Session Limit**: Maximum 4 concurrent unblock sessions to prevent abuse. When you hit the limit, you'll need to either:
+- Cancel existing sessions
+- Replace a specific session with `-r <id>`
+
 ### Advanced Options
 
 ```bash
 block unblock gmail -w 0 -d 60    # No wait, 60 min duration
 block unblock gmail -w 10         # Custom 10 min wait
+block unblock slack -r 3          # Replace session 3 with slack
 block daemon logs                 # View daemon logs
 block daemon restart              # Restart daemon
 ```
@@ -80,6 +93,7 @@ block daemon restart              # Restart daemon
 3. **Sessions can overlap** - Unblock gmail, then later unblock slack - both stay unblocked independently
 4. **All state in SQLite** - No temporary files, no lock files - everything is in `/var/lib/taviblock/state.db`
 5. **State persists** - Survives restarts, sleep, terminal closures, and system crashes
+6. **Active enforcement** - Chrome tabs are closed within 10 seconds when domains are blocked
 
 ## Resilient Design
 

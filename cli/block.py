@@ -108,6 +108,13 @@ def format_time_remaining(seconds):
     """Format seconds into human-readable time."""
     if seconds < 60:
         return f"{int(seconds)} seconds"
+    elif seconds <= 300:  # 5 minutes or less, show minutes and seconds
+        minutes = int(seconds / 60)
+        secs = int(seconds % 60)
+        if secs > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''} {secs} second{'s' if secs != 1 else ''}"
+        else:
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
     elif seconds < 3600:
         minutes = int(seconds / 60)
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
@@ -206,6 +213,36 @@ def cmd_unblock(args, targets=None):
                     duration = session['end_time'] - session['wait_until']
                     print(f"Duration: {format_time_remaining(duration)}")
                 return
+    
+    # Check session limit (default 4)
+    total_sessions = len(active_sessions) + len(pending_sessions)
+    session_limit = 4
+    
+    # Check if we should replace existing sessions
+    replace_id = getattr(args, 'replace', None)
+    
+    if replace_id is not None:
+        # Replace a specific session
+        found = False
+        for session in active_sessions + pending_sessions:
+            if session['id'] == replace_id:
+                db.cancel_session(session['id'])
+                print(f"Replaced session {replace_id}")
+                found = True
+                break
+        if not found:
+            print(f"Session {replace_id} not found")
+            return
+    elif total_sessions >= session_limit:
+        print(f"Session limit reached ({session_limit} sessions). Current sessions:")
+        print()
+        cmd_status(args)
+        print()
+        print("Options:")
+        print(f"  1. Cancel a session: block cancel <id>")
+        print(f"  2. Replace a session: block {' '.join(targets)} -r <id>")
+        print(f"  3. Cancel all sessions: block cancel")
+        return
     
     # Determine wait time
     has_ultra = any(is_ultra_distracting(d, sections) for d in all_domains)
@@ -425,6 +462,7 @@ Examples:
     parser_unblock.add_argument('targets', nargs='+', help='Domains or sections to unblock')
     parser_unblock.add_argument('-w', '--wait', type=int, help='Wait time in minutes')
     parser_unblock.add_argument('-d', '--duration', type=int, help='Duration in minutes')
+    parser_unblock.add_argument('-r', '--replace', type=int, metavar='ID', help='Replace specific session by ID')
     parser_unblock.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
     parser_unblock.set_defaults(func=cmd_unblock)
     
@@ -456,8 +494,24 @@ Examples:
     
     # If no recognized subcommand, assume it's targets for unblock
     if args and args[0] not in ['unblock', 'status', 'bypass', 'peek', 'cancel', 'daemon']:
+        # Check for -r flag with ID in simple form
+        replace_id = None
+        targets = []
+        i = 0
+        while i < len(args):
+            if args[i] in ['-r', '--replace']:
+                if i + 1 < len(args) and args[i + 1].isdigit():
+                    replace_id = int(args[i + 1])
+                    i += 2
+                else:
+                    print("Error: -r requires a session ID")
+                    return
+            else:
+                targets.append(args[i])
+                i += 1
+        
         # Treat as unblock targets
-        cmd_unblock(argparse.Namespace(config=CONFIG_FILE_DEFAULT, wait=None, duration=None), args)
+        cmd_unblock(argparse.Namespace(config=CONFIG_FILE_DEFAULT, wait=None, duration=None, replace=replace_id), targets)
         return
     
     # Parse and execute
