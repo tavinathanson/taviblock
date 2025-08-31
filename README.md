@@ -103,15 +103,26 @@ block daemon restart              # Restart daemon
 Block is designed to fail closed (keep blocking) rather than fail open:
 
 - **Starts on boot**: The daemon automatically starts when your Mac boots up
-- **Daemon auto-restarts**: If the daemon crashes, macOS automatically restarts it
+- **Multi-layer protection**: Watchdog process monitors and restarts the daemon if killed
+- **Signal protection**: Daemon ignores common kill signals (Ctrl+C, Ctrl+Z, etc.)
+- **Aggressive auto-restart**: macOS restarts the daemon within 1 second if it crashes
 - **Blocks restored on shutdown**: When the daemon stops, it restores full blocking first
 - **Auto-start on command**: Running any `block` command will start the daemon if it's not running
-- **No easy bypass**: You can't just kill the daemon to unblock everything - it blocks on exit
+- **No easy bypass**: Multiple mechanisms prevent simply killing the daemon to unblock
 
 To completely disable blocking, you would need to:
-1. Stop the daemon: `sudo launchctl unload /Library/LaunchDaemons/com.taviblock.daemon.plist`
+1. Stop both services: 
+   ```bash
+   sudo launchctl unload /Library/LaunchDaemons/com.taviblock.daemon.plist
+   sudo launchctl unload /Library/LaunchDaemons/com.taviblock.watchdog.plist
+   ```
 2. Manually edit `/etc/hosts` to remove the block entries
 3. Even then, any `block` command will restart everything
+
+For maximum protection:
+- Remove sudo access from your regular user account
+- Enable System Integrity Protection (SIP)
+- Consider using macOS Parental Controls as an additional layer
 
 ## Wait Times
 
@@ -150,6 +161,7 @@ block cancel
 - **Database**: `/var/lib/taviblock/state.db`
 - **Logs**: `/var/log/taviblock/daemon.log`
 - **Daemon**: `/Library/LaunchDaemons/com.taviblock.daemon.plist`
+- **Watchdog**: `/Library/LaunchDaemons/com.taviblock.watchdog.plist`
 
 ## Troubleshooting
 
