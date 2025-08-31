@@ -140,7 +140,10 @@ def cmd_status(args):
         for session in pending_sessions:
             wait_remaining = session['wait_until'] - datetime.now().timestamp()
             print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
+            if session['session_type'] == 'bypass':
+                print(f"    Domains: all")
+            else:
+                print(f"    Domains: {', '.join(session['domains'])}")
             print(f"    Starts in: {format_time_remaining(wait_remaining)}")
             print(f"    Duration: {format_time_remaining(session['end_time'] - session['wait_until'])}")
         print()
@@ -150,12 +153,22 @@ def cmd_status(args):
         for session in active_sessions:
             remaining = session['end_time'] - datetime.now().timestamp()
             print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
+            if session['session_type'] == 'bypass':
+                print(f"    Domains: all")
+            else:
+                print(f"    Domains: {', '.join(session['domains'])}")
             print(f"    Remaining: {format_time_remaining(remaining)}")
+            if session['session_type'] == 'bypass':
+                print(f"    Note: Bypass sessions cannot be extended")
         print()
         
         all_unblocked = db.get_all_unblocked_domains()
-        print(f"Currently unblocked: {', '.join(sorted(all_unblocked))}")
+        # Check if any active session is a bypass
+        has_bypass = any(s['session_type'] == 'bypass' for s in active_sessions)
+        if has_bypass:
+            print(f"Currently unblocked: all (bypass active)")
+        else:
+            print(f"Currently unblocked: {', '.join(sorted(all_unblocked))}")
     
     available, remaining = db.check_bypass_cooldown()
     if not available:
@@ -343,6 +356,100 @@ def cmd_cancel(args, session_id=None):
         print(f"Cancelled {len(all_sessions)} session(s)")
 
 
+def cmd_extend(args, session_id=None, minutes=None):
+    """Extend an active session - only if actively being used."""
+    if session_id is None:
+        session_id = getattr(args, 'session_id')
+    if minutes is None:
+        minutes = getattr(args, 'minutes')
+    
+    session = db.get_session_info(session_id)
+    if not session:
+        print(f"Session {session_id} not found")
+        sys.exit(1)
+    
+    # Check if it's a bypass session - these can't be extended
+    if session['session_type'] == 'bypass':
+        print(f"Session {session_id} is a bypass session and cannot be extended")
+        print("Bypass sessions are emergency 5-minute unblocks that must expire")
+        sys.exit(1)
+    
+    # Check if session is active
+    current_time = datetime.now().timestamp()
+    if session['wait_until'] > current_time:
+        print(f"Session {session_id} hasn't started yet")
+        sys.exit(1)
+    
+    if session['end_time'] <= current_time:
+        print(f"Session {session_id} has already ended")
+        sys.exit(1)
+    
+    # Check if this is being called from the notification (already verified active use)
+    if os.environ.get('TAVIBLOCK_EXTEND_FROM_NOTIFICATION') == '1':
+        is_actively_used = True
+        active_domain = "verified by notification"
+    else:
+        # Check if any domain in this session is actively being used
+        is_actively_used = False
+        active_domain = None
+        
+        for domain in session['domains']:
+            # Check if it's Slack and Slack is frontmost
+            if domain == 'slack.com':
+                try:
+                    script = '''
+                    tell application "System Events"
+                        set frontApp to name of first application process whose frontmost is true
+                        if frontApp is "Slack" then
+                            return "true"
+                        end if
+                    end tell
+                    return "false"
+                    '''
+                    result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+                    if result.stdout.strip() == "true":
+                        is_actively_used = True
+                        active_domain = "Slack"
+                        break
+                except:
+                    pass
+        
+            # Check if Chrome has an active tab with this domain
+            try:
+                script = f'''
+                tell application "Google Chrome"
+                    if it is running then
+                        set activeURL to URL of active tab of front window
+                        if activeURL contains "://{domain}" or activeURL contains "://www.{domain}" then
+                            return "true"
+                        end if
+                    end if
+                end tell
+                return "false"
+                '''
+                result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+                if result.stdout.strip() == "true":
+                    is_actively_used = True
+                    active_domain = domain
+                    break
+            except:
+                pass
+    
+    if not is_actively_used:
+        print(f"Session {session_id} cannot be extended - no active use detected")
+        print("Extensions are only allowed when actively using a blocked domain/app")
+        sys.exit(1)
+    
+    # Extend the session
+    new_end_time = session['end_time'] + (minutes * 60)
+    db.extend_session(session_id, new_end_time)
+    
+    print(f"Extended session {session_id} by {minutes} minutes")
+    print(f"Active domain: {active_domain}")
+    remaining = new_end_time - current_time
+    print(f"New remaining time: {format_time_remaining(remaining)}")
+
+
 def cmd_daemon(args):
     """Control the daemon."""
     if args.action == 'start':
@@ -432,6 +539,16 @@ def main():
         except ValueError:
             pass
     
+    # Extend command
+    if len(args) == 3 and args[0] == 'extend':
+        try:
+            session_id = int(args[1])
+            minutes = int(args[2])
+            cmd_extend(argparse.Namespace(config=CONFIG_FILE_DEFAULT), session_id, minutes)
+            return
+        except ValueError:
+            pass
+    
     # Daemon commands
     if args[0] == 'daemon' and len(args) >= 2:
         cmd_daemon(argparse.Namespace(action=args[1]))
@@ -487,13 +604,19 @@ Examples:
     parser_cancel.add_argument('--all', action='store_true', help='Cancel all')
     parser_cancel.set_defaults(func=cmd_cancel)
     
+    # extend
+    parser_extend = subparsers.add_parser('extend', help='Extend active session')
+    parser_extend.add_argument('session_id', type=int, help='Session ID to extend')
+    parser_extend.add_argument('minutes', type=int, help='Minutes to extend by')
+    parser_extend.set_defaults(func=cmd_extend)
+    
     # daemon
     parser_daemon = subparsers.add_parser('daemon', help='Control daemon')
     parser_daemon.add_argument('action', choices=['start', 'stop', 'restart', 'logs'])
     parser_daemon.set_defaults(func=cmd_daemon)
     
     # If no recognized subcommand, assume it's targets for unblock
-    if args and args[0] not in ['unblock', 'status', 'bypass', 'peek', 'cancel', 'daemon']:
+    if args and args[0] not in ['unblock', 'status', 'bypass', 'peek', 'cancel', 'extend', 'daemon']:
         # Check for -r flag with ID in simple form
         replace_id = None
         targets = []

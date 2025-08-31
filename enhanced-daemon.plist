@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Inc.//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.taviblock.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/tavi/drive/repos/taviblock_ws/taviblock/cli/daemon.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+    <key>StandardOutPath</key>
+    <string>/var/log/taviblock/daemon.stdout</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/taviblock/daemon.stderr</string>
+    <key>UserName</key>
+    <string>root</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/tavi/drive/repos/taviblock_ws/taviblock</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>ExitTimeOut</key>
+    <integer>0</integer>
+</dict>
+</plist>

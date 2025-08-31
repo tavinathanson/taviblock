@@ -16,6 +16,7 @@ A streamlined self-control tool for blocking distracting websites on macOS.
 - **Smart time display**: Shows seconds for short durations (≤5 minutes)
 - **Overlapping unblocks**: Multiple independent sessions can run simultaneously
 - **Simple command**: Just `block` for everything
+- **Interactive notifications**: Terminal popup 1 minute before active tabs/apps close
 
 ## Installation
 
@@ -181,3 +182,18 @@ block youtube -w 0 -d 60  # Also unblock YouTube for 60 minutes starting now
 ```
 
 The system only prevents creating identical duplicate sessions. Different sessions can overlap freely.
+
+### Interactive Notifications
+When you're actively using a blocked domain/app that's about to be closed:
+
+1. **1 minute before closing**: If a Chrome tab or Slack is active, a terminal window pops up
+2. **Interactive prompt**: Choose to extend by 5 minutes, 30 minutes, or let it close
+3. **Works with your terminal**: Automatically uses iTerm2 if installed, otherwise Terminal.app
+4. **30-second timeout**: If you don't respond, the session ends as scheduled
+
+This prevents losing work when you're in the middle of something important.
+
+**Important Notes**: 
+- Bypass sessions (emergency 5-minute unblocks) cannot be extended and don't show notifications
+- The `block extend` command only works if you're actively using the domain/app
+- This prevents arbitrary session extensions and ensures extensions are only granted when truly needed

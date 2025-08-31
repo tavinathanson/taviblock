@@ -206,6 +206,17 @@ def get_session_info(session_id):
     conn.close()
     return None
 
+def extend_session(session_id, new_end_time):
+    """Extend a session's end time."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE unblock_sessions SET end_time = ? WHERE id = ?", 
+                   (new_end_time, session_id))
+    
+    conn.commit()
+    conn.close()
+
 if __name__ == "__main__":
     # Initialize the database if run directly
     init_db()

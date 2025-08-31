@@ -30,8 +30,15 @@ class TaviblockDaemon:
     def __init__(self):
         self.running = True
         self.config_file = CONFIG_FILE_DEFAULT
+        self.notified_sessions = set()  # Track sessions we've notified about
+        
+        # Make daemon harder to kill - ignore common signals
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore Ctrl+C
+        signal.signal(signal.SIGQUIT, signal.SIG_IGN)  # Ignore Ctrl+\
+        signal.signal(signal.SIGTSTP, signal.SIG_IGN)  # Ignore Ctrl+Z
+        
+        # Only handle SIGTERM for graceful shutdown (from launchctl)
         signal.signal(signal.SIGTERM, self.handle_signal)
-        signal.signal(signal.SIGINT, self.handle_signal)
         
     def handle_signal(self, signum, frame):
         """Handle shutdown signals gracefully."""
@@ -141,6 +148,133 @@ class TaviblockDaemon:
         # Kill specific applications
         self.kill_slack_if_blocked(blocked_domains)
     
+    def check_active_chrome_tab(self, domain):
+        """Check if a Chrome tab with this domain is currently active."""
+        try:
+            script = f'''
+            tell application "Google Chrome"
+                if it is running then
+                    set activeURL to URL of active tab of front window
+                    if activeURL contains "://{domain}" or activeURL contains "://www.{domain}" then
+                        return "true"
+                    end if
+                end if
+            end tell
+            return "false"
+            '''
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            return result.stdout.strip() == "true"
+        except:
+            return False
+    
+    def check_slack_frontmost(self):
+        """Check if Slack is the frontmost application."""
+        try:
+            script = '''
+            tell application "System Events"
+                set frontApp to name of first application process whose frontmost is true
+                if frontApp is "Slack" then
+                    return "true"
+                end if
+            end tell
+            return "false"
+            '''
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            return result.stdout.strip() == "true"
+        except:
+            return False
+    
+    def send_terminal_notification(self, session_id, domains, app_type):
+        """Open a terminal window with interactive notification."""
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            notification_script = os.path.join(script_dir, 'open_terminal_notification.py')
+            
+            # Run the notification script as the logged-in user, not root
+            # Get the current console user
+            console_user = subprocess.run(
+                ['stat', '-f', '%Su', '/dev/console'], 
+                capture_output=True, text=True
+            ).stdout.strip()
+            
+            # Use sudo to run as the console user
+            subprocess.Popen([
+                'sudo', '-u', console_user,
+                'python3', notification_script,
+                str(session_id),
+                domains,
+                app_type
+            ])
+            
+            logger.info(f"Opened terminal notification for session {session_id}")
+        except Exception as e:
+            logger.error(f"Error opening terminal notification: {e}")
+    
+    def check_ending_sessions(self):
+        """Check for sessions ending soon and notify if actively used."""
+        active_sessions = db.get_active_sessions()
+        current_time = datetime.now().timestamp()
+        
+        # Clean up notified sessions that have ended
+        sessions_to_remove = set()
+        for session_id in self.notified_sessions:
+            session_exists = any(s['id'] == session_id for s in active_sessions)
+            if not session_exists:
+                sessions_to_remove.add(session_id)
+        self.notified_sessions -= sessions_to_remove
+        
+        for session in active_sessions:
+            time_remaining = session['end_time'] - current_time
+            
+            # Skip bypass sessions - they shouldn't have notifications
+            if session['session_type'] == 'bypass':
+                continue
+            
+            # Check if session ends in 60-65 seconds (give 5 second window)
+            if 60 <= time_remaining <= 65 and session['id'] not in self.notified_sessions:
+                # Check if any domain in this session is actively used
+                for domain in session['domains']:
+                    if domain == 'slack.com' and self.check_slack_frontmost():
+                        self.send_terminal_notification(
+                            session['id'],
+                            'slack.com',
+                            'slack'
+                        )
+                        logger.info(f"Notified about Slack closing (session {session['id']})")
+                        self.notified_sessions.add(session['id'])
+                        break
+                    elif self.check_active_chrome_tab(domain):
+                        self.send_terminal_notification(
+                            session['id'],
+                            domain,
+                            'tab'
+                        )
+                        logger.info(f"Notified about {domain} tabs closing (session {session['id']})")
+                        self.notified_sessions.add(session['id'])
+                        break
+    
+    def count_chrome_tabs(self, domain):
+        """Count how many Chrome tabs are open for a domain."""
+        try:
+            script = f'''
+            tell application "Google Chrome"
+                set tabCount to 0
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        set tabURL to URL of t
+                        if tabURL contains "://{domain}" or tabURL contains "://www.{domain}" then
+                            set tabCount to tabCount + 1
+                        end if
+                    end repeat
+                end repeat
+                return tabCount
+            end tell
+            '''
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            return int(result.stdout.strip())
+        except:
+            return 0
+    
     def run(self):
         """Main daemon loop."""
         logger.info("Taviblock daemon started")
@@ -166,6 +300,9 @@ class TaviblockDaemon:
                 
                 # Enforce blocks by closing tabs/apps
                 self.enforce_blocks(domains_to_block)
+                
+                # Check for sessions ending soon
+                self.check_ending_sessions()
                 
                 # Log active sessions periodically
                 active_sessions = db.get_active_sessions()
