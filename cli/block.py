@@ -200,8 +200,8 @@ def cmd_unblock(args, targets=None):
     # Check each domain
     for session_list, session_type in [(active_sessions, "active"), (pending_sessions, "pending")]:
         for session in session_list:
-            # Check if all requested domains are already in this session
-            if all(domain in session['domains'] for domain in all_domains):
+            # Check if this is an IDENTICAL session (same domains, not just overlapping)
+            if set(session['domains']) == all_domains and session['session_type'] != 'bypass':
                 if session_type == "active":
                     remaining = session['end_time'] - datetime.now().timestamp()
                     print(f"'{', '.join(targets)}' already unblocked in session {session['id']}")

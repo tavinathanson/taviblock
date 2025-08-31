@@ -169,8 +169,8 @@ class TaviblockDaemon:
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
             
-            # Sleep for 10 seconds before next check
-            time.sleep(10)
+            # Sleep for 1 second before next check
+            time.sleep(1)
         
         # Restore full blocking on shutdown
         logger.info("Restoring full blocking before shutdown")

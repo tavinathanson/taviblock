@@ -8,7 +8,7 @@ A streamlined self-control tool for blocking distracting websites on macOS.
 - **Clock-based timing**: All timers use real time and persist through sleep/restarts
 - **SQLite state management**: All state stored in a single database - no temporary files
 - **Background daemon**: Automatically updates `/etc/hosts` and closes blocked tabs/apps
-- **Chrome tab closing**: Automatically closes tabs for blocked domains every 10 seconds
+- **Chrome tab closing**: Automatically closes tabs for blocked domains within 1 second
 - **App termination**: Kills apps like Slack when their domains are blocked
 - **Session protection**: Prevents duplicate sessions for domains already unblocked
 - **Session limits**: Maximum 4 concurrent sessions to prevent abuse
@@ -93,7 +93,8 @@ block daemon restart              # Restart daemon
 3. **Sessions can overlap** - Unblock gmail, then later unblock slack - both stay unblocked independently
 4. **All state in SQLite** - No temporary files, no lock files - everything is in `/var/lib/taviblock/state.db`
 5. **State persists** - Survives restarts, sleep, terminal closures, and system crashes
-6. **Active enforcement** - Chrome tabs are closed within 10 seconds when domains are blocked
+6. **Active enforcement** - Chrome tabs are closed within 1 second when domains are blocked
+7. **Smart session detection** - Only prevents identical duplicate sessions (bypass doesn't block specific unblocks)
 
 ## Resilient Design
 
@@ -161,4 +162,21 @@ block daemon restart
 # Reset all state
 sudo rm /var/lib/taviblock/state.db
 block daemon restart
+
+# Find the daemon process
+ps aux | grep daemon.py
+# Or look for 'python3' in Activity Monitor
 ```
+
+## Advanced Usage
+
+### Overlapping Sessions
+You can have multiple unblock sessions running simultaneously:
+
+```bash
+block bypass              # Unblocks everything for 5 minutes
+block youtube -w 0 -d 60  # Also unblock YouTube for 60 minutes starting now
+# YouTube stays unblocked for the full 60 minutes, even after bypass ends
+```
+
+The system only prevents creating identical duplicate sessions. Different sessions can overlap freely.
