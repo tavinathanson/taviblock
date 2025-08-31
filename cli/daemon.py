@@ -85,21 +85,31 @@ class TaviblockDaemon:
         # Return domains that should be blocked (all minus unblocked)
         return list(all_domains - unblocked_domains)
     
-    def close_chrome_tabs_for_domain(self, domain):
-        """Close Chrome tabs for a specific domain using AppleScript."""
+    def close_chrome_tabs_for_domains(self, domains):
+        """Close Chrome tabs for multiple domains using a single AppleScript call."""
+        if not domains:
+            return
+            
         try:
+            # Build the URL checking conditions
+            conditions = []
+            for domain in domains:
+                conditions.append(f'(tabURL contains "://{domain}" or tabURL contains "://www.{domain}")')
+            
+            condition_string = " or ".join(conditions)
+            
             script = f'''
             if application "Google Chrome" is running then
                 tell application "Google Chrome"
                     repeat with w in windows
-                        set matchingTabs to {{}}
+                        set tabsToClose to {{}}
                         repeat with t in tabs of w
                             set tabURL to URL of t
-                            if tabURL contains "://{domain}" or tabURL contains "://www.{domain}" then
-                                copy t to end of matchingTabs
+                            if {condition_string} then
+                                set end of tabsToClose to t
                             end if
                         end repeat
-                        repeat with t in matchingTabs
+                        repeat with t in tabsToClose
                             close t
                         end repeat
                     end repeat
@@ -107,9 +117,9 @@ class TaviblockDaemon:
             end if
             '''
             subprocess.run(['osascript', '-e', script], capture_output=True)
-            logger.debug(f"Closed Chrome tabs for {domain}")
+            logger.debug(f"Closed Chrome tabs for {len(domains)} blocked domains")
         except Exception as e:
-            logger.error(f"Error closing Chrome tabs for {domain}: {e}")
+            logger.error(f"Error closing Chrome tabs: {e}")
     
     def kill_slack_if_blocked(self, blocked_domains):
         """Kill Slack application if slack.com is blocked."""
@@ -125,9 +135,8 @@ class TaviblockDaemon:
     
     def enforce_blocks(self, blocked_domains):
         """Close browser tabs and applications for blocked domains."""
-        # Close Chrome tabs for all blocked domains
-        for domain in blocked_domains:
-            self.close_chrome_tabs_for_domain(domain)
+        # Close Chrome tabs for all blocked domains in one call
+        self.close_chrome_tabs_for_domains(blocked_domains)
         
         # Kill specific applications
         self.kill_slack_if_blocked(blocked_domains)
