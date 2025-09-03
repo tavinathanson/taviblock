@@ -1,0 +1,206 @@
+# Taviblock Configuration
+
+domains:
+  # Individual domains
+  netflix.com:
+    tags: [ultra_distracting, entertainment]
+  
+  instagram.com:
+    tags: [social, distracting]
+  
+  reddit.com:
+    tags: [social, distracting]
+  
+  youtube.com:
+    tags: [entertainment, distracting]
+  
+  eventbrite.com:
+    tags: [events]
+  
+  nytimes.com:
+    tags: [news]
+  
+  cnn.com:
+    tags: [news]
+  
+  timesofisrael.com:
+    tags: [news]
+  
+  jpost.com:
+    tags: [news]
+  
+  mrmoneymustache.com:
+    tags: [finance]
+  
+  washingtonpost.com:
+    tags: [news]
+  
+  foxnews.com:
+    tags: [news]
+  
+  linkedin.com:
+    tags: [social, professional]
+  
+  simplifimoney.com:
+    tags: [finance]
+  
+  honeybook.com:
+    tags: [business]
+  
+  17hats.com:
+    tags: [business]
+  
+  clarity.microsoft.com:
+    tags: [business]
+  
+  nextdoor.com:
+    tags: [social]
+  
+  news.ycombinator.com:
+    tags: [tech, news]
+  
+  # Domain groups
+  gmail:
+    domains:
+      - gmail.com
+      - www.gmail.com
+      - mail.google.com
+      - www.mail.google.com
+      - googlemail.com
+      - www.googlemail.com
+    tags: [communication, email]
+  
+  twitter:
+    domains:
+      - twitter.com
+      - x.com
+      - api.x.com
+      - t.co
+      - twimg.com
+      - twitpic.com
+      - api.twitter.com
+      - mobile.twitter.com
+      - publish.twitter.com
+      - ads.twitter.com
+      - analytics.twitter.com
+      - cards.twitter.com
+      - cdn.twitter.com
+      - developer.twitter.com
+      - help.twitter.com
+      - pbs.twimg.com
+      - abs.twimg.com
+      - video.twimg.com
+      - vault.twimg.com
+      - upload.twitter.com
+      - stream.twitter.com
+      - tweetdeck.twitter.com
+      - ton.twitter.com
+      - si0.twimg.com
+      - si.twimg.com
+      - o.twimg.com
+      - ma.twimg.com
+      - syndication.twitter.com
+      - support.twitter.com
+      - blog.twitter.com
+      - business.twitter.com
+      - careers.twitter.com
+      - about.twitter.com
+      - legal.twitter.com
+      - status.twitter.com
+      - partners.twitter.com
+      - ads-api.twitter.com
+      - dev.twitter.com
+    tags: [social, distracting]
+  
+  facebook:
+    domains:
+      - facebook.com
+      - messenger.com
+      - m.me
+      - fbcdn.net
+      - business.facebook.com
+      - adsmanager.facebook.com
+    tags: [social, distracting]
+  
+  slack:
+    domains:
+      - slack.com
+      - slack-edge.com
+      - cdn.slack.com
+      - api.slack.com
+    tags: [communication, work]
+  
+  mailchimp:
+    domains:
+      - mailchimp.com
+      - login.mailchimp.com
+      - us11.admin.mailchimp.com
+    tags: [business, email]
+  
+  ads:
+    domains:
+      - ads.google.com
+      - business.google.com
+      - business.facebook.com
+      - adsmanager.facebook.com
+      - admin.17hats.com
+      - photos.google.com
+      - ccarnet.org
+    tags: [business, ads]
+
+profiles:
+  # Standard unblock - mimics current behavior
+  unblock:
+    description: "Standard unblock with wait time"
+    wait:
+      base: 5  # Single non-ultra-distracting domain
+      concurrent_penalty: 5  # Additional domains add 5 min each
+      # Special case for ultra_distracting handled by tag rules below
+    duration: 30
+    
+    # Tag-based wait time overrides
+    tag_rules:
+      - tags: [ultra_distracting]
+        wait_override: 30  # Override base wait for ultra distracting
+  
+  # Quick check for specific domains
+  quick:
+    description: "Quick 30-second check"
+    wait:
+      base: 0.5  # 30 seconds
+      concurrent_penalty: 0
+    duration: 1
+  
+  # Peek at everything
+  peek:
+    description: "60-second peek at all sites"
+    wait: 1
+    duration: 1
+    all: true
+  
+  # Emergency bypass
+  bypass:
+    description: "Emergency 5-minute unblock (once per hour)"
+    wait: 0
+    duration: 5
+    cooldown: 60
+    all: true
+  
+  # Custom profiles users can add
+  work:
+    description: "Work mode - communication and business tools"
+    wait: 0
+    duration: 120
+    tags: [work, communication, business]
+  
+  focus:
+    description: "Focus mode - only email and Slack"
+    wait: 0
+    duration: 90
+    only: [gmail, slack]
+  
+  news:
+    description: "News reading session"
+    wait: 5
+    duration: 20
+    tags: [news]

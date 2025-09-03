@@ -1,211 +1,204 @@
-Block
-========================
+# taviblock
 
-A streamlined self-control tool for blocking distracting websites on macOS.
+A domain blocking tool for macOS where **everything is blocked by default** - sites are only accessible during temporary unblock sessions.
 
-## Features
+## Core Principle: Block by Default
 
-- **Clock-based timing**: All timers use real time and persist through sleep/restarts
-- **SQLite state management**: All state stored in a single database - no temporary files
-- **Background daemon**: Automatically updates `/etc/hosts` and closes blocked tabs/apps
-- **Chrome tab closing**: Automatically closes tabs for blocked domains within 1 second
-- **Optimized performance**: Single batched check for all blocked domains (not per-domain)
-- **App termination**: Kills apps like Slack when their domains are blocked
-- **Session protection**: Prevents duplicate sessions for domains already unblocked
-- **Session limits**: Maximum 4 concurrent sessions to prevent abuse
-- **Smart time display**: Shows seconds for short durations (≤5 minutes)
-- **Overlapping unblocks**: Multiple independent sessions can run simultaneously
-- **Simple command**: Just `block` for everything
-- **Interactive notifications**: Terminal popup 1 minute before active tabs/apps close
+**All configured domains are permanently blocked.** The only way to access them is through temporary, time-limited unblock sessions. When a session expires, domains are automatically re-blocked immediately.
+
+## Key Features
+
+- **Flexible YAML Configuration**: Define custom profiles, timing rules, and domain groups
+- **Independent Parallel Sessions**: Unblock multiple domains with separate timers
+- **Smart Timing**: Concurrent penalties prevent gaming the system
+- **Background Daemon**: Automatically updates `/etc/hosts` and closes blocked tabs
+- **Persistent State**: All sessions survive restarts and crashes
+- **Profile System**: Create custom profiles for different scenarios (work, focus, research)
+- **Tag-based Control**: Group and unblock domains by purpose
+- **Emergency Bypass**: Once-per-hour emergency access with cooldown
+- **Active Enforcement**: Automatically closes Chrome tabs and terminates apps (like Slack) for blocked domains
+- **Real-time Monitoring**: Checks and enforces blocks every second
 
 ## Installation
 
-### 1. Clone and Setup
+Taviblock requires system-wide installation since it needs sudo access to modify `/etc/hosts`:
+
 ```bash
-git clone https://github.com/tavinathanson/taviblock.git ~/drive/repos/taviblock_ws/taviblock
-cd ~/drive/repos/taviblock_ws/taviblock
-sudo ./setup.sh
+# Clone the repository
+git clone https://github.com/yourusername/taviblock.git
+cd taviblock
+
+# Install using macOS system Python (recommended)
+sudo /usr/bin/python3 setup.py install
 ```
 
-### 2. Add Alias
-```bash
-./add_alias.sh
-source ~/.zshrc
+This uses the macOS system Python which avoids any Homebrew Python restrictions.
+
+## Configuration
+
+Taviblock uses a YAML configuration file (`config.yaml`) to define domains and blocking profiles. The default location is in the taviblock directory, but you can specify a custom location with `--config`.
+
+### Example Configuration
+
+```yaml
+domains:
+  # Individual domains with tags
+  netflix.com:
+    tags: [ultra_distracting, entertainment]
+  
+  reddit.com:
+    tags: [social, distracting]
+  
+  # Domain groups
+  gmail:
+    domains:
+      - gmail.com
+      - mail.google.com
+    tags: [communication, email]
+  
+  slack:
+    domains:
+      - slack.com
+      - slack-edge.com
+    tags: [communication, work]
+
+profiles:
+  # Standard unblock with wait times
+  unblock:
+    description: "Standard unblock with wait time"
+    wait:
+      base: 5
+      concurrent_penalty: 5  # Each additional session adds 5 min
+    duration: 30
+    tag_rules:
+      - tags: [ultra_distracting]
+        wait_override: 30
+  
+  # Quick check
+  quick:
+    description: "Quick 30-second check"
+    wait:
+      base: 0.5  # 30 seconds
+      concurrent_penalty: 0
+    duration: 1
+  
+  # Emergency bypass
+  bypass:
+    description: "Emergency 5-minute unblock (once per hour)"
+    wait: 0
+    duration: 5
+    cooldown: 60
+    all: true  # Unblocks everything
+  
+  # Custom work profile
+  work:
+    description: "Work mode - communication tools only"
+    wait: 0
+    duration: 120
+    tags: [work, communication]
 ```
-
-That's it! The setup script automatically configures passwordless sudo for the block command.
-
-### 3. Configure Domains
-Edit `config.txt` to list domains to block:
-
-```ini
-[ultra_distracting]
-netflix.com
-
-[gmail]
-gmail.com
-mail.google.com
-
-[slack]
-slack.com
-
-[default]
-reddit.com
-twitter.com
-facebook.com
-```
-
-**Special sections:**
-- `[ultra_distracting]`: Domains here have longer wait times (30 min instead of 5-10 min)
-- Custom sections like `[gmail]` or `[slack]`: Group related domains for easy unblocking
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-block                    # Show status
-block gmail              # Unblock gmail (5 min wait, 30 min duration)
-block gmail slack        # Unblock multiple sections
-block gmail -r 3         # Replace session 3 with gmail
-block bypass             # Emergency 5-min unblock (once per hour)
-block peek               # 60-second peek after 60-second wait
-block cancel             # Cancel all sessions
-block cancel 42          # Cancel specific session
+# Show status
+sudo taviblock status
+
+# Unblock specific domains/groups
+sudo taviblock unblock gmail              # 5 min wait, 30 min duration
+sudo taviblock unblock gmail slack        # Multiple independent sessions
+sudo taviblock unblock netflix            # 30 min wait (ultra_distracting)
+
+# Use other profiles
+sudo taviblock quick gmail                # 30-second quick check
+sudo taviblock bypass                     # Emergency 5-min unblock all
+sudo taviblock peek                       # 60-second peek at everything
+sudo taviblock work                       # 2-hour work session
+
+# Cancel sessions
+sudo taviblock cancel                     # Cancel all sessions
+sudo taviblock cancel 42                  # Cancel specific session
+
+# Daemon control
+sudo taviblock daemon start
+sudo taviblock daemon stop
+sudo taviblock daemon logs
 ```
 
-**Session Limit**: Maximum 4 concurrent unblock sessions to prevent abuse. When you hit the limit, you'll need to either:
-- Cancel existing sessions
-- Replace a specific session with `-r <id>`
+### Key Concepts
 
-### Advanced Options
-
-```bash
-block unblock gmail -w 0 -d 60    # No wait, 60 min duration
-block unblock gmail -w 10         # Custom 10 min wait
-block unblock slack -r 3          # Replace session 3 with slack
-block daemon logs                 # View daemon logs
-block daemon restart              # Restart daemon
-```
+1. **Parallel Sessions**: Each domain/group gets its own independent session timer
+2. **Concurrent Penalties**: Additional sessions have longer wait times to prevent abuse
+3. **Profile-based**: Different profiles for different use cases (quick, work, bypass)
+4. **Tag-based Selection**: Profiles can target domains by tags
+5. **Cooldowns**: Some profiles (like bypass) have cooldowns between uses
 
 ## How It Works
 
-1. **Everything is blocked by default** - The daemon ensures all configured domains are blocked
-2. **Unblock sessions temporarily allow access** - Each session has a wait time and duration
-3. **Sessions can overlap** - Unblock gmail, then later unblock slack - both stay unblocked independently
-4. **All state in SQLite** - No temporary files, no lock files - everything is in `/var/lib/taviblock/state.db`
-5. **State persists** - Survives restarts, sleep, terminal closures, and system crashes
-6. **Active enforcement** - Chrome tabs are closed within 1 second when domains are blocked
-7. **Smart session detection** - Only prevents identical duplicate sessions (bypass doesn't block specific unblocks)
+1. **Default State**: All domains in config.yaml are blocked via `/etc/hosts`
+2. **Temporary Exceptions**: The `unblock` command creates time-limited exceptions
+3. **Automatic Re-blocking**: When sessions expire, domains return to blocked state
+4. **Persistent Enforcement**: Background daemon continuously enforces the block list
+5. **Fail-Safe Design**: On daemon shutdown, full blocking is restored immediately
 
-## Resilient Design
+## Advanced Features
 
-Block is designed to fail closed (keep blocking) rather than fail open:
+### Custom Profiles
+Add your own profiles to `config.yaml`:
 
-- **Starts on boot**: The daemon automatically starts when your Mac boots up
-- **Multi-layer protection**: Watchdog process monitors and restarts the daemon if killed
-- **Signal protection**: Daemon ignores common kill signals (Ctrl+C, Ctrl+Z, etc.)
-- **Aggressive auto-restart**: macOS restarts the daemon within 1 second if it crashes
-- **Blocks restored on shutdown**: When the daemon stops, it restores full blocking first
-- **Auto-start on command**: Running any `block` command will start the daemon if it's not running
-- **No easy bypass**: Multiple mechanisms prevent simply killing the daemon to unblock
+```yaml
+profiles:
+  focus:
+    description: "Deep focus mode"
+    wait: 0
+    duration: 90
+    only: [gmail]  # Only unblock gmail
+  
+  research:
+    description: "Research session"
+    wait: 10
+    duration: 45
+    tags: [news, educational]
+```
 
-To completely disable blocking, you would need to:
-1. Stop both services: 
-   ```bash
-   sudo launchctl unload /Library/LaunchDaemons/com.taviblock.daemon.plist
-   sudo launchctl unload /Library/LaunchDaemons/com.taviblock.watchdog.plist
-   ```
-2. Manually edit `/etc/hosts` to remove the block entries
-3. Even then, any `block` command will restart everything
+### Tag-based Blocking
+Group domains by purpose and unblock by tag:
 
-For maximum protection:
-- Remove sudo access from your regular user account
-- Enable System Integrity Protection (SIP)
-- Consider using macOS Parental Controls as an additional layer
+```yaml
+domains:
+  github.com:
+    tags: [development, work]
+  stackoverflow.com:
+    tags: [development, educational]
 
-## Wait Times
-
-| Command | Regular Domains | Ultra Distracting |
-|---------|----------------|-------------------|
-| Single target | 5 minutes | 30 minutes |
-| Multiple targets | 10 minutes | 30 minutes |
-| Bypass | No wait | No wait |
-| Peek | 60 seconds | 60 seconds |
-
-## Examples
-
-```bash
-# Morning routine - check email quickly
-block gmail
-
-# Need to focus but check Slack periodically  
-block slack
-
-# Emergency - need everything for 5 minutes
-block bypass
-
-# Just want to see what's happening
-block peek
-
-# Unblock immediately for a meeting
-block unblock slack -w 0 -d 60
-
-# Cancel everything and focus
-block cancel
+profiles:
+  dev:
+    description: "Development session"
+    wait: 0
+    duration: 180
+    tags: [development]
 ```
 
 ## File Locations
 
-- **Config**: `~/drive/repos/taviblock_ws/taviblock/config.txt`
+- **Config**: `./config.yaml` (or specify with `--config`)
 - **Database**: `/var/lib/taviblock/state.db`
 - **Logs**: `/var/log/taviblock/daemon.log`
-- **Daemon**: `/Library/LaunchDaemons/com.taviblock.daemon.plist`
-- **Watchdog**: `/Library/LaunchDaemons/com.taviblock.watchdog.plist`
 
 ## Troubleshooting
 
 ```bash
-# Check what's happening
-block
-block daemon logs
+# Check current status
+sudo taviblock status
 
-# Restart everything
-block daemon restart
+# View daemon logs
+sudo taviblock daemon logs
 
-# Reset all state
-sudo rm /var/lib/taviblock/state.db
-block daemon restart
+# Restart daemon
+sudo taviblock daemon restart
 
-# Find the daemon process
-ps aux | grep daemon.py
-# Or look for 'python3' in Activity Monitor
+# Check if daemon is running
+ps aux | grep taviblock
 ```
-
-## Advanced Usage
-
-### Overlapping Sessions
-You can have multiple unblock sessions running simultaneously:
-
-```bash
-block bypass              # Unblocks everything for 5 minutes
-block youtube -w 0 -d 60  # Also unblock YouTube for 60 minutes starting now
-# YouTube stays unblocked for the full 60 minutes, even after bypass ends
-```
-
-The system only prevents creating identical duplicate sessions. Different sessions can overlap freely.
-
-### Interactive Notifications
-When you're actively using a blocked domain/app that's about to be closed:
-
-1. **1 minute before closing**: If a Chrome tab or Slack is active, a terminal window pops up
-2. **Interactive prompt**: Choose to extend by 5 minutes, 30 minutes, or let it close
-3. **Works with your terminal**: Automatically uses iTerm2 if installed, otherwise Terminal.app
-4. **30-second timeout**: If you don't respond, the session ends as scheduled
-
-This prevents losing work when you're in the middle of something important.
-
-**Important Notes**: 
-- Bypass sessions (emergency 5-minute unblocks) cannot be extended and don't show notifications
-- The `block extend` command only works if you're actively using the domain/app
-- This prevents arbitrary session extensions and ensures extensions are only granted when truly needed

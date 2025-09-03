@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import time
 import os
 import sys
@@ -8,7 +8,8 @@ from pathlib import Path
 from datetime import datetime
 import subprocess
 import db
-from taviblock import read_config, generate_block_entries, HOSTS_PATH, BLOCKER_START, BLOCKER_END, CONFIG_FILE_DEFAULT
+from cli.config_loader import Config
+from taviblock import generate_block_entries, HOSTS_PATH, BLOCKER_START, BLOCKER_END
 
 # Logging setup
 LOG_DIR = Path("/var/log/taviblock")
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 class TaviblockDaemon:
     def __init__(self):
         self.running = True
-        self.config_file = CONFIG_FILE_DEFAULT
+        self.config = Config()
         self.notified_sessions = set()  # Track sessions we've notified about
         
         # Make daemon harder to kill - ignore common signals
@@ -83,10 +84,10 @@ class TaviblockDaemon:
     
     def get_domains_to_block(self):
         """Calculate which domains should currently be blocked."""
-        # Start with all domains from config
-        all_domains = set(read_config(self.config_file))
+        # Start with all domains from config - everything is blocked by default
+        all_domains = set(self.config.get_all_domains())
         
-        # Get domains that are currently unblocked
+        # Get domains that are currently unblocked (temporary exceptions)
         unblocked_domains = set(db.get_all_unblocked_domains())
         
         # Return domains that should be blocked (all minus unblocked)
@@ -318,9 +319,9 @@ class TaviblockDaemon:
             # Sleep for 1 second before next check
             time.sleep(1)
         
-        # Restore full blocking on shutdown
+        # Restore full blocking on shutdown - critical safety feature
         logger.info("Restoring full blocking before shutdown")
-        all_domains = read_config(self.config_file)
+        all_domains = self.config.get_all_domains()
         self.update_hosts_file(all_domains)
         logger.info("Taviblock daemon stopped")
 

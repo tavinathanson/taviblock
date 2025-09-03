@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import sqlite3
 import os
 from datetime import datetime, timedelta
@@ -36,14 +36,15 @@ def init_db():
             end_time REAL NOT NULL,
             wait_until REAL,  -- When the unblock actually starts (after wait period)
             session_type TEXT NOT NULL,  -- 'single', 'multiple', 'bypass', 'peek'
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            is_all_domains INTEGER DEFAULT 0  -- 1 if this session unblocks all domains
         )
     """)
     
-    # Table for bypass cooldown tracking
+    # Table for profile cooldown tracking (replaces bypass_cooldown)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS bypass_cooldown (
-            id INTEGER PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS profile_cooldowns (
+            profile_name TEXT PRIMARY KEY,
             last_used REAL NOT NULL
         )
     """)
@@ -56,10 +57,18 @@ def init_db():
         )
     """)
     
+    # Add migration for existing databases
+    try:
+        cursor.execute("ALTER TABLE unblock_sessions ADD COLUMN is_all_domains INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    
     conn.commit()
     conn.close()
 
-def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single'):
+def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single', is_all_domains=False):
     """Add a new unblock session."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -69,9 +78,9 @@ def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type=
     end_time = wait_until + (duration_minutes * 60)
     
     cursor.execute("""
-        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (json.dumps(domains), now, end_time, wait_until, session_type, now))
+        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at, is_all_domains)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (json.dumps(domains), now, end_time, wait_until, session_type, now, 1 if is_all_domains else 0))
     
     session_id = cursor.lastrowid
     conn.commit()
@@ -144,21 +153,21 @@ def clean_expired_sessions():
     conn.commit()
     conn.close()
 
-def check_bypass_cooldown():
-    """Check if bypass is available (no cooldown or cooldown expired)."""
+def check_profile_cooldown(profile_name, cooldown_minutes=0):
+    """Check if a profile is available (no cooldown or cooldown expired)."""
     conn = get_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT last_used FROM bypass_cooldown ORDER BY last_used DESC LIMIT 1")
+    cursor.execute("SELECT last_used FROM profile_cooldowns WHERE profile_name = ?", (profile_name,))
     row = cursor.fetchone()
     
-    if not row:
+    if not row or cooldown_minutes == 0:
         conn.close()
         return True, 0
     
     last_used = row['last_used']
     now = datetime.now().timestamp()
-    cooldown_seconds = 3600  # 1 hour
+    cooldown_seconds = cooldown_minutes * 60
     
     if now - last_used >= cooldown_seconds:
         conn.close()
@@ -168,13 +177,17 @@ def check_bypass_cooldown():
         conn.close()
         return False, remaining
 
-def set_bypass_used():
-    """Mark bypass as used, starting the cooldown."""
+def set_profile_cooldown(profile_name, cooldown_minutes):
+    """Mark profile as used, starting the cooldown."""
+    if cooldown_minutes == 0:
+        return  # No cooldown to set
+        
     conn = get_connection()
     cursor = conn.cursor()
     
     now = datetime.now().timestamp()
-    cursor.execute("INSERT OR REPLACE INTO bypass_cooldown (id, last_used) VALUES (1, ?)", (now,))
+    cursor.execute("INSERT OR REPLACE INTO profile_cooldowns (profile_name, last_used) VALUES (?, ?)", 
+                  (profile_name, now))
     
     conn.commit()
     conn.close()

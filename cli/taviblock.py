@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import argparse
 import sys
 import os
@@ -7,15 +7,14 @@ from pathlib import Path
 import json
 import subprocess
 
-import db
+from cli import db
+from cli.config_loader import Config
 
 # Path to the system hosts file on macOS
 HOSTS_PATH = "/etc/hosts"
 # Markers to delimit our managed block section in /etc/hosts
 BLOCKER_START = "# BLOCKER START"
 BLOCKER_END = "# BLOCKER END"
-# Default config file location
-CONFIG_FILE_DEFAULT = str(Path(__file__).resolve().parent.parent / "config.txt")
 
 
 def require_admin():
@@ -23,41 +22,6 @@ def require_admin():
     if os.geteuid() != 0:
         print("This script must be run as root. Try running with sudo.")
         sys.exit(1)
-
-
-def read_config(config_file):
-    """Read the config file and return a list of domains to block."""
-    if not os.path.exists(config_file):
-        print(f"Config file {config_file} does not exist.")
-        sys.exit(1)
-    domains = []
-    with open(config_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                if line.startswith('[') and line.endswith(']'):
-                    continue
-                domains.append(line)
-    return domains
-
-
-def read_config_sections(config_file):
-    """Read config file and return dictionary of sections to domains."""
-    sections = {}
-    current_section = "default"
-    sections[current_section] = []
-    with open(config_file, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("[") and line.endswith("]"):
-                current_section = line[1:-1].strip()
-                if current_section not in sections:
-                    sections[current_section] = []
-            else:
-                sections[current_section].append(line)
-    return sections
 
 
 def generate_block_entries(domains):
@@ -83,17 +47,17 @@ def generate_block_entries(domains):
     return entries
 
 
-def is_ultra_distracting(domain, sections):
-    """Check if a domain is in the ultra_distracting section."""
-    if 'ultra_distracting' in sections:
-        return domain in sections['ultra_distracting']
-    return False
-
-
 def format_time_remaining(seconds):
     """Format seconds into human-readable time."""
     if seconds < 60:
         return f"{int(seconds)} seconds"
+    elif seconds <= 300:  # 5 minutes or less, show minutes and seconds
+        minutes = int(seconds / 60)
+        secs = int(seconds % 60)
+        if secs > 0:
+            return f"{minutes} minute{'s' if minutes != 1 else ''} {secs} second{'s' if secs != 1 else ''}"
+        else:
+            return f"{minutes} minute{'s' if minutes != 1 else ''}"
     elif seconds < 3600:
         minutes = int(seconds / 60)
         return f"{minutes} minute{'s' if minutes != 1 else ''}"
@@ -105,104 +69,97 @@ def format_time_remaining(seconds):
         return f"{hours} hour{'s' if hours != 1 else ''}"
 
 
-def cmd_unblock(args):
-    """Unblock specified domains/sections."""
-    sections = read_config_sections(args.config)
-    domains_list = read_config(args.config)
+def get_concurrent_session_count():
+    """Get count of active and pending sessions"""
+    active = db.get_active_sessions()
+    pending = db.get_pending_sessions()
+    return len(active) + len(pending)
+
+
+def cmd_profile(config: Config, profile_name: str, targets: list = None):
+    """Generic profile command handler"""
+    if not config.is_valid_profile(profile_name):
+        print(f"Unknown profile: {profile_name}")
+        print(f"Available profiles: {', '.join(config.get_profile_names())}")
+        sys.exit(1)
     
-    # Process targets
-    all_domains = set()
-    for target in args.targets:
-        target = target.strip()
+    profile = config.profiles[profile_name]
+    
+    # Handle profiles with cooldown (like bypass)
+    if 'cooldown' in profile and profile['cooldown'] > 0:
+        available, remaining = db.check_profile_cooldown(profile_name, profile['cooldown'])
+        if not available:
+            print(f"{profile_name} on cooldown: {format_time_remaining(remaining)} remaining")
+            sys.exit(1)
+    
+    # Resolve what to unblock
+    if not targets:
+        targets = []
+    
+    domains, all_tags = config.resolve_targets(targets, profile_name)
+    
+    if not domains:
+        print("No domains to unblock")
+        sys.exit(1)
+    
+    # Calculate timing based on concurrent sessions and tags
+    concurrent_sessions = get_concurrent_session_count()
+    timing = config.calculate_timing(profile_name, len(targets), concurrent_sessions, all_tags)
+    
+    # Create sessions for each target (parallel sessions)
+    if profile.get('all') or 'tags' in profile or 'only' in profile:
+        # These profiles create a single session for all domains
+        session_id = db.add_unblock_session(
+            domains,
+            timing['duration'],
+            timing['wait'],
+            profile_name,
+            is_all_domains=profile.get('all', False)
+        )
         
-        # Check sections
-        if target in sections:
-            all_domains.update(sections[target])
-        elif not target.endswith('.com') and (target + '.com') in sections:
-            target = target + '.com'
-            all_domains.update(sections[target])
-        # Check single domains
-        elif target in domains_list:
-            all_domains.add(target)
-        elif not target.endswith('.com') and (target + '.com') in domains_list:
-            all_domains.add(target + '.com')
+        print(f"{profile_name.capitalize()} session created (ID: {session_id})")
+        if profile.get('all'):
+            print(f"Unblocking: all")
+        elif 'tags' in profile:
+            print(f"Unblocking: domains tagged {', '.join(profile['tags'])}")
         else:
-            print(f"Warning: '{target}' not found in config")
-    
-    if not all_domains:
-        print("No valid domains found")
-        sys.exit(1)
-    
-    # Determine wait time
-    has_ultra = any(is_ultra_distracting(d, sections) for d in all_domains)
-    
-    if args.wait is None:
-        if len(args.targets) == 1:
-            args.wait = 30 if has_ultra else 5
-        else:
-            args.wait = 30 if has_ultra else 10
-    
-    if args.duration is None:
-        args.duration = 30
-    
-    # Create session
-    session_id = db.add_unblock_session(
-        list(all_domains),
-        args.duration,
-        args.wait,
-        'multiple' if len(args.targets) > 1 else 'single'
-    )
-    
-    print(f"Unblock session created (ID: {session_id})")
-    print(f"Targets: {', '.join(args.targets)}")
-    print(f"Wait: {args.wait} minutes")
-    print(f"Duration: {args.duration} minutes")
-    
-    if args.wait > 0:
-        print(f"\nDomains will be unblocked in {args.wait} minutes")
+            print(f"Unblocking: {', '.join(profile['only'])}")
     else:
-        print("\nDomains are now unblocked")
+        # Create separate sessions for each target
+        session_ids = []
+        base_wait = timing['wait']
+        
+        for i, target in enumerate(targets):
+            target_domains, _ = config.resolve_targets([target], profile_name)
+            # Add concurrent penalty for each additional session
+            wait_config = profile.get('wait', {})
+            if isinstance(wait_config, dict):
+                penalty = wait_config.get('concurrent_penalty', 0)
+                wait = base_wait + (i * penalty)
+            else:
+                wait = base_wait
+            
+            session_id = db.add_unblock_session(
+                target_domains,
+                timing['duration'],
+                wait,
+                profile_name,
+                is_all_domains=False
+            )
+            session_ids.append((target, session_id, wait))
+        
+        print(f"Created {len(session_ids)} parallel session(s):")
+        for target, sid, wait in session_ids:
+            print(f"  [{sid}] {target}: unblocks in {format_time_remaining(wait * 60)}")
+    
+    # Mark cooldown if applicable
+    if 'cooldown' in profile and profile['cooldown'] > 0:
+        db.set_profile_cooldown(profile_name, profile['cooldown'])
+    
+    print(f"\nDuration: {timing['duration']} minutes once active")
 
 
-def cmd_bypass(args):
-    """Emergency 5-minute unblock (once per hour)."""
-    available, remaining = db.check_bypass_cooldown()
-    
-    if not available:
-        print(f"Bypass on cooldown: {format_time_remaining(remaining)} remaining")
-        sys.exit(1)
-    
-    all_domains = read_config(args.config)
-    
-    session_id = db.add_unblock_session(
-        all_domains,
-        5,  # 5 minutes
-        0,  # No wait
-        'bypass'
-    )
-    
-    db.set_bypass_used()
-    
-    print(f"Bypass activated! All domains unblocked for 5 minutes")
-    print(f"Session ID: {session_id}")
-
-
-def cmd_peek(args):
-    """Quick 60-second peek after 60-second wait."""
-    all_domains = read_config(args.config)
-    
-    session_id = db.add_unblock_session(
-        all_domains,
-        1,  # 1 minute duration
-        1,  # 1 minute wait
-        'peek'
-    )
-    
-    print(f"Peek session created (ID: {session_id})")
-    print("All domains will be unblocked in 60 seconds for 60 seconds")
-
-
-def cmd_status(args):
+def cmd_status(config: Config, args):
     """Show current status."""
     active_sessions = db.get_active_sessions()
     pending_sessions = db.get_pending_sessions()
@@ -216,7 +173,12 @@ def cmd_status(args):
         for session in pending_sessions:
             wait_remaining = session['wait_until'] - datetime.now().timestamp()
             print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
+            # Show "all" for sessions that unblock everything
+            if session.get('is_all_domains'):
+                print(f"    Domains: all")
+            else:
+                print(f"    Domains: {', '.join(session['domains'][:5])}" + 
+                      (" (and more)" if len(session['domains']) > 5 else ""))
             print(f"    Starts in: {format_time_remaining(wait_remaining)}")
             print(f"    Duration: {format_time_remaining(session['end_time'] - session['wait_until'])}")
         print()
@@ -226,16 +188,27 @@ def cmd_status(args):
         for session in active_sessions:
             remaining = session['end_time'] - datetime.now().timestamp()
             print(f"  [{session['id']}] {session['session_type']}:")
-            print(f"    Domains: {', '.join(session['domains'])}")
+            # Show "all" for sessions that unblock everything
+            if session.get('is_all_domains'):
+                print(f"    Domains: all")
+            else:
+                print(f"    Domains: {', '.join(session['domains'][:5])}" +
+                      (" (and more)" if len(session['domains']) > 5 else ""))
             print(f"    Remaining: {format_time_remaining(remaining)}")
         print()
         
         all_unblocked = db.get_all_unblocked_domains()
-        print(f"Currently unblocked: {', '.join(sorted(all_unblocked))}")
+        print(f"Currently unblocked: {', '.join(sorted(all_unblocked)[:10])}" +
+              (" (and more)" if len(all_unblocked) > 10 else ""))
     
-    available, remaining = db.check_bypass_cooldown()
-    if not available:
-        print(f"\nBypass cooldown: {format_time_remaining(remaining)} remaining")
+    # Check cooldowns for profiles
+    print("\nProfile cooldowns:")
+    for profile_name in config.get_profile_names():
+        profile = config.profiles[profile_name]
+        if 'cooldown' in profile:
+            available, remaining = db.check_profile_cooldown(profile_name, profile['cooldown'])
+            if not available:
+                print(f"  {profile_name}: {format_time_remaining(remaining)} remaining")
 
 
 def cmd_cancel(args):
@@ -293,64 +266,80 @@ def cmd_daemon(args):
 def main():
     require_admin()
     
+    # Load config
+    config = Config()
+    
     parser = argparse.ArgumentParser(
-        description="Taviblock - Domain blocking with clock-based unblock sessions",
+        description="Taviblock - Domain blocking with flexible profiles",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=f"""
+Available profiles:
+{chr(10).join(f'  {name}: {p.get("description", "Custom profile")}' for name, p in config.profiles.items() if p.get('description'))}
+
 Examples:
-  sudo taviblock unblock gmail              # Unblock gmail (5 min wait, 30 min duration)
-  sudo taviblock unblock gmail slack        # Unblock multiple targets
-  sudo taviblock unblock gmail -w 0 -d 60   # Unblock immediately for 60 minutes
-  sudo taviblock bypass                     # Emergency 5-minute unblock (once per hour)
-  sudo taviblock peek                       # Quick 60-second peek
+  sudo taviblock unblock gmail              # Unblock gmail based on profile rules
+  sudo taviblock unblock gmail slack        # Multiple parallel sessions
+  sudo taviblock peek                       # Quick peek at everything
+  sudo taviblock bypass                     # Emergency bypass (with cooldown)
+  sudo taviblock quick gmail                # Quick 30-second check
+  sudo taviblock work                       # Use work profile
   sudo taviblock status                     # Show current status
   sudo taviblock cancel 42                  # Cancel specific session
-  sudo taviblock cancel --all               # Cancel all sessions
+  sudo taviblock cancel                     # Cancel all sessions
 """
     )
     
-    subparsers = parser.add_subparsers(dest='command', required=True, help='Command to run')
+    # Add --config flag
+    parser.add_argument('--config', help='Path to config file')
     
-    # unblock
-    parser_unblock = subparsers.add_parser('unblock', help='Unblock domains/sections')
-    parser_unblock.add_argument('targets', nargs='+', help='Domains or sections to unblock')
-    parser_unblock.add_argument('-w', '--wait', type=int, help='Wait time in minutes')
-    parser_unblock.add_argument('-d', '--duration', type=int, help='Duration in minutes')
-    parser_unblock.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
-    parser_unblock.set_defaults(func=cmd_unblock)
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
     
-    # bypass
-    parser_bypass = subparsers.add_parser('bypass', help='Emergency 5-min unblock')
-    parser_bypass.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
-    parser_bypass.set_defaults(func=cmd_bypass)
-    
-    # peek
-    parser_peek = subparsers.add_parser('peek', help='Quick 60-second peek')
-    parser_peek.add_argument('--config', default=CONFIG_FILE_DEFAULT, help='Config file path')
-    parser_peek.set_defaults(func=cmd_peek)
+    # Add subparser for each profile
+    for profile_name in config.get_profile_names():
+        profile = config.profiles[profile_name]
+        help_text = profile.get('description', f'{profile_name} profile')
+        
+        parser_profile = subparsers.add_parser(profile_name, help=help_text)
+        
+        # Some profiles take targets, some don't
+        if not (profile.get('all') or profile.get('tags') or profile.get('only')):
+            parser_profile.add_argument('targets', nargs='*', help='Domains or groups to unblock')
     
     # status
     parser_status = subparsers.add_parser('status', help='Show status')
-    parser_status.set_defaults(func=cmd_status)
     
-    # cancel
+    # cancel  
     parser_cancel = subparsers.add_parser('cancel', help='Cancel sessions')
     parser_cancel.add_argument('session_id', nargs='?', type=int, help='Session ID')
-    parser_cancel.add_argument('--all', action='store_true', help='Cancel all')
-    parser_cancel.set_defaults(func=cmd_cancel)
     
     # daemon
     parser_daemon = subparsers.add_parser('daemon', help='Control daemon')
     parser_daemon.add_argument('action', choices=['start', 'stop', 'restart', 'logs'])
-    parser_daemon.set_defaults(func=cmd_daemon)
     
     args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    # Reload config with custom path if provided
+    if args.config:
+        config = Config(args.config)
     
     # Initialize database
     db.init_db()
     
-    # Execute command
-    args.func(args)
+    # Route to appropriate handler
+    if args.command == 'status':
+        cmd_status(config, args)
+    elif args.command == 'cancel':
+        cmd_cancel(args)
+    elif args.command == 'daemon':
+        cmd_daemon(args)
+    else:
+        # It's a profile command
+        targets = getattr(args, 'targets', [])
+        cmd_profile(config, args.command, targets)
 
 
 if __name__ == '__main__':

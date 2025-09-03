@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """
 Interactive notification script for extending block sessions.
 This script is called by the daemon to show a terminal popup.

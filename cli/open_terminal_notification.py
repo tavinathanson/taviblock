@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """
 Opens a terminal window with the notification script.
 Detects and uses the user's preferred terminal (iTerm2 or Terminal.app).
