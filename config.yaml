@@ -1,5 +1,8 @@
 # Taviblock Configuration
 
+# Optional: Default profile to use when no command is specified
+default_profile: unblock
+
 domains:
   # Individual domains
   netflix.com:

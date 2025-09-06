@@ -316,6 +316,22 @@ Examples:
     parser_daemon = subparsers.add_parser('daemon', help='Control daemon')
     parser_daemon.add_argument('action', choices=['start', 'stop', 'restart', 'logs'])
     
+    # Check if we should use default profile
+    default_profile = config.get_default_profile()
+    if default_profile and len(sys.argv) > 1:
+        # Get all valid commands (profiles + built-in commands)
+        valid_commands = config.get_profile_names() + ['status', 'cancel', 'daemon']
+        
+        # Check if first non-flag argument is a valid command
+        first_arg_idx = 1
+        while first_arg_idx < len(sys.argv) and sys.argv[first_arg_idx].startswith('--'):
+            first_arg_idx += 2  # Skip flag and its value
+        
+        if first_arg_idx < len(sys.argv) and sys.argv[first_arg_idx] not in valid_commands:
+            # First argument is not a command, use default profile
+            # Insert the default profile as the command
+            sys.argv.insert(first_arg_idx, default_profile)
+    
     args = parser.parse_args()
     
     if not args.command:

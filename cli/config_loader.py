@@ -193,3 +193,7 @@ class Config:
     def is_valid_profile(self, profile_name: str) -> bool:
         """Check if a profile exists"""
         return profile_name in self.profiles
+    
+    def get_default_profile(self) -> Optional[str]:
+        """Get the default profile name if specified"""
+        return self.data.get('default_profile')
