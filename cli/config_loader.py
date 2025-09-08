@@ -148,7 +148,7 @@ class Config:
         Args:
             profile_name: Name of the profile
             target_count: Number of targets being unblocked
-            concurrent_sessions: Number of currently active/pending sessions
+            concurrent_sessions: Number of currently pending sessions (not active ones)
             all_tags: Set of all tags from targets
             
         Returns:

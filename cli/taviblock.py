@@ -76,6 +76,12 @@ def get_concurrent_session_count():
     return len(active) + len(pending)
 
 
+def get_pending_session_count():
+    """Get count of only pending sessions (for wait time calculation)"""
+    pending = db.get_pending_sessions()
+    return len(pending)
+
+
 def cmd_profile(config: Config, profile_name: str, targets: list = None):
     """Generic profile command handler"""
     if not config.is_valid_profile(profile_name):
@@ -108,9 +114,9 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
         print("No domains to unblock")
         sys.exit(1)
     
-    # Calculate timing based on concurrent sessions and tags
-    concurrent_sessions = get_concurrent_session_count()
-    timing = config.calculate_timing(profile_name, len(targets), concurrent_sessions, all_tags)
+    # Calculate timing based on pending sessions only (not running ones)
+    pending_sessions = get_pending_session_count()
+    timing = config.calculate_timing(profile_name, len(targets), pending_sessions, all_tags)
     
     # Show progressive penalty if applicable
     from cli import penalty
