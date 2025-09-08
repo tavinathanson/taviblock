@@ -82,6 +82,67 @@ def get_pending_session_count():
     return len(pending)
 
 
+def prompt_queue_session(target_desc, remaining_time, domains, timing, profile_name, is_all=False):
+    """Prompt user to queue a session and handle the response."""
+    print(f"\n{target_desc} currently unblocked ({format_time_remaining(remaining_time)} remaining)")
+    print("Would you like to queue it to unblock again after it's blocked?")
+    response = input("Queue for next unblock? (yes/no): ").lower().strip()
+    
+    if response in ['yes', 'y']:
+        session_id = db.add_unblock_session(
+            domains,
+            timing['duration'],
+            timing['wait'],
+            profile_name,
+            is_all_domains=is_all,
+            queued_for_domains=domains
+        )
+        print(f"Queued session (ID: {session_id}) - will start after current session ends")
+        return True
+    return False
+
+
+def get_domains_from_sessions(sessions):
+    """Extract all domains from a list of sessions into a set."""
+    domains = set()
+    for session in sessions:
+        domains.update(session['domains'])
+    return domains
+
+
+def calculate_wait_for_session(profile, base_wait, session_count):
+    """Calculate wait time for a new session based on profile and concurrent sessions."""
+    wait_config = profile.get('wait', {})
+    if isinstance(wait_config, dict):
+        penalty = wait_config.get('concurrent_penalty', 0)
+        return base_wait + (session_count * penalty)
+    return base_wait
+
+
+def find_session_with_domains(sessions, target_domains):
+    """Find a session containing any of the target domains."""
+    for session in sessions:
+        if any(d in session['domains'] for d in target_domains):
+            return session
+    return None
+
+
+def print_session_info(session, session_type=""):
+    """Print formatted session information."""
+    prefix = f"  [{session['id']}] {session['session_type']}:"
+    print(prefix)
+    
+    # Show domains
+    if session.get('is_all_domains'):
+        print(f"    Domains: all")
+    else:
+        domains = session['domains'][:5]
+        print(f"    Domains: {', '.join(domains)}" + 
+              (" (and more)" if len(session['domains']) > 5 else ""))
+    
+    return prefix
+
+
 def cmd_profile(config: Config, profile_name: str, targets: list = None):
     """Generic profile command handler"""
     if not config.is_valid_profile(profile_name):
@@ -133,19 +194,18 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
         active_sessions = db.get_active_sessions()
         pending_sessions = db.get_pending_sessions()
         
-        active_domains = set()
-        for session in active_sessions:
-            active_domains.update(session['domains'])
-            
-        pending_domains = set()
-        for session in pending_sessions:
-            pending_domains.update(session['domains'])
+        active_domains = get_domains_from_sessions(active_sessions)
+        pending_domains = get_domains_from_sessions(pending_sessions)
         
         # For 'all' profiles, check if there's already an 'all' session
         if profile.get('all'):
             for session in active_sessions:
                 if session.get('is_all_domains'):
-                    print(f"Already have an active 'all' session (ID: {session['id']})")
+                    remaining = session['end_time'] - datetime.now().timestamp()
+                    prompt_queue_session(
+                        f"Already have an active 'all' session (ID: {session['id']})",
+                        remaining, domains, timing, profile_name, is_all=True
+                    )
                     return
             for session in pending_sessions:
                 if session.get('is_all_domains'):
@@ -156,7 +216,17 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
             all_active = all(domain in active_domains for domain in domains)
             all_pending = all(domain in pending_domains for domain in domains)
             if all_active:
-                print(f"All requested domains are already unblocked")
+                # Find the session with these domains
+                matching_session = None
+                for session in active_sessions:
+                    if set(domains).issubset(set(session['domains'])):
+                        matching_session = session
+                        break
+                
+                if matching_session:
+                    remaining = matching_session['end_time'] - datetime.now().timestamp()
+                    target_desc = f"Domains tagged {', '.join(profile['tags'])}" if 'tags' in profile else f"{', '.join(profile['only'])}"
+                    prompt_queue_session(target_desc, remaining, domains, timing, profile_name)
                 return
             elif all_pending:
                 print(f"All requested domains are already pending")
@@ -184,13 +254,8 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
         pending_sessions = db.get_pending_sessions()
         
         # Build sets of domains that are active vs pending
-        active_domains = set()
-        for session in active_sessions:
-            active_domains.update(session['domains'])
-            
-        pending_domains = set()
-        for session in pending_sessions:
-            pending_domains.update(session['domains'])
+        active_domains = get_domains_from_sessions(active_sessions)
+        pending_domains = get_domains_from_sessions(pending_sessions)
         
         session_ids = []
         already_active_targets = []
@@ -207,19 +272,20 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
             
             # Check if any of these domains are already active or pending
             if any(domain in active_domains for domain in target_domains):
-                already_active_targets.append(target)
+                active_session = find_session_with_domains(active_sessions, target_domains)
+                if active_session:
+                    remaining = active_session['end_time'] - datetime.now().timestamp()
+                    if prompt_queue_session(target, remaining, target_domains, timing, profile_name):
+                        new_session_count += 1
+                    else:
+                        already_active_targets.append(target)
                 continue
             elif any(domain in pending_domains for domain in target_domains):
                 already_pending_targets.append(target)
                 continue
             
             # Add concurrent penalty based on actual new sessions
-            wait_config = profile.get('wait', {})
-            if isinstance(wait_config, dict):
-                penalty = wait_config.get('concurrent_penalty', 0)
-                wait = base_wait + (new_session_count * penalty)
-            else:
-                wait = base_wait
+            wait = calculate_wait_for_session(profile, base_wait, new_session_count)
             
             new_session_count += 1  # Increment after calculating wait
             
@@ -254,22 +320,27 @@ def cmd_status(config: Config, args):
     """Show current status."""
     active_sessions = db.get_active_sessions()
     pending_sessions = db.get_pending_sessions()
+    queued_sessions = db.get_queued_sessions()
     
-    if not active_sessions and not pending_sessions:
+    if not active_sessions and not pending_sessions and not queued_sessions:
         print("All domains are blocked")
         return
+    
+    if queued_sessions:
+        print("QUEUED SESSIONS (waiting for domains to be blocked again):")
+        for session in queued_sessions:
+            print_session_info(session)
+            print(f"    Waiting for: {', '.join(session['queued_for_domains'][:3])}" +
+                  (" (and more)" if len(session['queued_for_domains']) > 3 else "") + " to be blocked")
+            duration_seconds = session['end_time'] - session['wait_until']
+            print(f"    Duration: {format_time_remaining(duration_seconds)} once active")
+        print()
     
     if pending_sessions:
         print("PENDING SESSIONS:")
         for session in pending_sessions:
+            print_session_info(session)
             wait_remaining = session['wait_until'] - datetime.now().timestamp()
-            print(f"  [{session['id']}] {session['session_type']}:")
-            # Show "all" for sessions that unblock everything
-            if session.get('is_all_domains'):
-                print(f"    Domains: all")
-            else:
-                print(f"    Domains: {', '.join(session['domains'][:5])}" + 
-                      (" (and more)" if len(session['domains']) > 5 else ""))
             print(f"    Starts in: {format_time_remaining(wait_remaining)}")
             print(f"    Duration: {format_time_remaining(session['end_time'] - session['wait_until'])}")
         print()
@@ -277,14 +348,8 @@ def cmd_status(config: Config, args):
     if active_sessions:
         print("ACTIVE SESSIONS:")
         for session in active_sessions:
+            print_session_info(session)
             remaining = session['end_time'] - datetime.now().timestamp()
-            print(f"  [{session['id']}] {session['session_type']}:")
-            # Show "all" for sessions that unblock everything
-            if session.get('is_all_domains'):
-                print(f"    Domains: all")
-            else:
-                print(f"    Domains: {', '.join(session['domains'][:5])}" +
-                      (" (and more)" if len(session['domains']) > 5 else ""))
             print(f"    Remaining: {format_time_remaining(remaining)}")
         print()
         

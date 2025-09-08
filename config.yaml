@@ -53,12 +53,6 @@ domains:
   simplifimoney.com:
     tags: [finance]
   
-  honeybook.com:
-    tags: [business]
-  
-  clarity.microsoft.com:
-    tags: [business]
-  
   nextdoor.com:
     tags: [social]
   

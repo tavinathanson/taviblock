@@ -276,6 +276,44 @@ class TaviblockDaemon:
         except:
             return 0
     
+    def process_queued_sessions(self):
+        """Check queued sessions and activate them if their target domains are now blocked."""
+        try:
+            queued_sessions = db.get_queued_sessions()
+            if not queued_sessions:
+                return
+            
+            # Get currently unblocked domains
+            unblocked_domains = set(db.get_all_unblocked_domains())
+            
+            for session in queued_sessions:
+                # Check if all queued_for_domains are now blocked (not in unblocked set)
+                queued_for = set(session['queued_for_domains'])
+                if not queued_for.intersection(unblocked_domains):
+                    # All domains this session was waiting for are now blocked
+                    # Convert this session to a regular pending session
+                    logger.info(f"Activating queued session {session['id']} - domains {queued_for} are now blocked")
+                    
+                    # Calculate new wait time based on current pending sessions
+                    pending_count = len(db.get_pending_sessions())
+                    
+                    # Get the profile config to calculate wait time
+                    profile = self.config.profiles.get(session['session_type'], {})
+                    wait_config = profile.get('wait', {})
+                    
+                    if isinstance(wait_config, dict):
+                        wait_minutes = wait_config.get('base', 0) + (pending_count * wait_config.get('concurrent_penalty', 0))
+                    else:
+                        wait_minutes = wait_config if isinstance(wait_config, (int, float)) else 0
+                    
+                    # Update the session to remove queued_for_domains and set proper wait time
+                    db.activate_queued_session(session['id'], wait_minutes)
+                    
+                    logger.info(f"Session {session['id']} will start in {wait_minutes} minutes")
+                    
+        except Exception as e:
+            logger.error(f"Error processing queued sessions: {e}")
+    
     def run(self):
         """Main daemon loop."""
         logger.info("Taviblock daemon started")
@@ -289,6 +327,9 @@ class TaviblockDaemon:
             try:
                 # Clean expired sessions
                 db.clean_expired_sessions()
+                
+                # Check for queued sessions that can now start
+                self.process_queued_sessions()
                 
                 # Get current state
                 domains_to_block = self.get_domains_to_block()

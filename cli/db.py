@@ -37,7 +37,8 @@ def init_db():
             wait_until REAL,  -- When the unblock actually starts (after wait period)
             session_type TEXT NOT NULL,  -- 'single', 'multiple', 'bypass', 'peek'
             created_at REAL NOT NULL,
-            is_all_domains INTEGER DEFAULT 0  -- 1 if this session unblocks all domains
+            is_all_domains INTEGER DEFAULT 0,  -- 1 if this session unblocks all domains
+            queued_for_domains TEXT  -- JSON array of domains this is queued for (waiting for them to be blocked again)
         )
     """)
     
@@ -65,10 +66,17 @@ def init_db():
         # Column already exists
         pass
     
+    try:
+        cursor.execute("ALTER TABLE unblock_sessions ADD COLUMN queued_for_domains TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    
     conn.commit()
     conn.close()
 
-def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single', is_all_domains=False):
+def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single', is_all_domains=False, queued_for_domains=None):
     """Add a new unblock session."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -78,9 +86,10 @@ def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type=
     end_time = wait_until + (duration_minutes * 60)
     
     cursor.execute("""
-        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at, is_all_domains)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (json.dumps(domains), now, end_time, wait_until, session_type, now, 1 if is_all_domains else 0))
+        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at, is_all_domains, queued_for_domains)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (json.dumps(domains), now, end_time, wait_until, session_type, now, 1 if is_all_domains else 0, 
+          json.dumps(queued_for_domains) if queued_for_domains else None))
     
     session_id = cursor.lastrowid
     conn.commit()
@@ -119,7 +128,7 @@ def get_pending_sessions():
     
     cursor.execute("""
         SELECT * FROM unblock_sessions 
-        WHERE wait_until > ?
+        WHERE wait_until > ? AND queued_for_domains IS NULL
         ORDER BY wait_until ASC
     """, (now,))
     
@@ -127,6 +136,27 @@ def get_pending_sessions():
     for row in cursor.fetchall():
         session = dict(row)
         session['domains'] = json.loads(session['domains'])
+        sessions.append(session)
+    
+    conn.close()
+    return sessions
+
+def get_queued_sessions():
+    """Get sessions that are queued (waiting for domains to be blocked again)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM unblock_sessions 
+        WHERE queued_for_domains IS NOT NULL
+        ORDER BY created_at ASC
+    """)
+    
+    sessions = []
+    for row in cursor.fetchall():
+        session = dict(row)
+        session['domains'] = json.loads(session['domains'])
+        session['queued_for_domains'] = json.loads(session['queued_for_domains']) if session['queued_for_domains'] else None
         sessions.append(session)
     
     conn.close()
@@ -148,7 +178,8 @@ def clean_expired_sessions():
     cursor = conn.cursor()
     
     now = datetime.now().timestamp()
-    cursor.execute("DELETE FROM unblock_sessions WHERE end_time <= ?", (now,))
+    # Only delete sessions that have actually started (not queued ones)
+    cursor.execute("DELETE FROM unblock_sessions WHERE end_time <= ? AND queued_for_domains IS NULL", (now,))
     
     conn.commit()
     conn.close()
@@ -228,6 +259,36 @@ def extend_session(session_id, new_end_time):
                    (new_end_time, session_id))
     
     conn.commit()
+    conn.close()
+
+def activate_queued_session(session_id, wait_minutes):
+    """Convert a queued session to a regular pending session."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    now = datetime.now().timestamp()
+    new_wait_until = now + (wait_minutes * 60)
+    
+    # Get current session to calculate new end time
+    cursor.execute("SELECT * FROM unblock_sessions WHERE id = ?", (session_id,))
+    session = cursor.fetchone()
+    
+    if session:
+        duration_seconds = session['end_time'] - session['wait_until']
+        new_end_time = new_wait_until + duration_seconds
+        
+        # Update session to remove queued_for_domains and set new times
+        cursor.execute("""
+            UPDATE unblock_sessions 
+            SET queued_for_domains = NULL, 
+                wait_until = ?, 
+                end_time = ?,
+                start_time = ?
+            WHERE id = ?
+        """, (new_wait_until, new_end_time, now, session_id))
+        
+        conn.commit()
+    
     conn.close()
 
 if __name__ == "__main__":
