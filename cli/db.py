@@ -38,7 +38,8 @@ def init_db():
             session_type TEXT NOT NULL,  -- 'single', 'multiple', 'bypass', 'peek'
             created_at REAL NOT NULL,
             is_all_domains INTEGER DEFAULT 0,  -- 1 if this session unblocks all domains
-            queued_for_domains TEXT  -- JSON array of domains this is queued for (waiting for them to be blocked again)
+            queued_for_domains TEXT,  -- JSON array of domains this is queued for (waiting for them to be blocked again)
+            target_name TEXT  -- Human-friendly name like 'slack' or 'gmail'
         )
     """)
     
@@ -73,10 +74,17 @@ def init_db():
         # Column already exists
         pass
     
+    try:
+        cursor.execute("ALTER TABLE unblock_sessions ADD COLUMN target_name TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    
     conn.commit()
     conn.close()
 
-def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single', is_all_domains=False, queued_for_domains=None):
+def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type='single', is_all_domains=False, queued_for_domains=None, target_name=None):
     """Add a new unblock session."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -86,10 +94,10 @@ def add_unblock_session(domains, duration_minutes, wait_minutes=0, session_type=
     end_time = wait_until + (duration_minutes * 60)
     
     cursor.execute("""
-        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at, is_all_domains, queued_for_domains)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO unblock_sessions (domains, start_time, end_time, wait_until, session_type, created_at, is_all_domains, queued_for_domains, target_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (json.dumps(domains), now, end_time, wait_until, session_type, now, 1 if is_all_domains else 0, 
-          json.dumps(queued_for_domains) if queued_for_domains else None))
+          json.dumps(queued_for_domains) if queued_for_domains else None, target_name))
     
     session_id = cursor.lastrowid
     conn.commit()

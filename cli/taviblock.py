@@ -82,7 +82,7 @@ def get_pending_session_count():
     return len(pending)
 
 
-def prompt_queue_session(target_desc, remaining_time, domains, timing, profile_name, is_all=False):
+def prompt_queue_session(target_desc, remaining_time, domains, timing, profile_name, is_all=False, target_name=None):
     """Prompt user to queue a session and handle the response."""
     print(f"\n{target_desc} currently unblocked ({format_time_remaining(remaining_time)} remaining)")
     print("Would you like to queue it to unblock again after it's blocked?")
@@ -95,7 +95,8 @@ def prompt_queue_session(target_desc, remaining_time, domains, timing, profile_n
             timing['wait'],
             profile_name,
             is_all_domains=is_all,
-            queued_for_domains=domains
+            queued_for_domains=domains,
+            target_name=target_name
         )
         print(f"Queued session (ID: {session_id}) - will start after current session ends")
         return True
@@ -129,7 +130,9 @@ def find_session_with_domains(sessions, target_domains):
 
 def print_session_info(session, session_type=""):
     """Print formatted session information."""
-    prefix = f"  [{session['id']}] {session['session_type']}:"
+    # Include target name if available
+    target_info = f" ({session.get('target_name')})" if session.get('target_name') else ""
+    prefix = f"  [{session['id']}] {session['session_type']}{target_info}:"
     print(prefix)
     
     # Show domains
@@ -204,7 +207,7 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
                     remaining = session['end_time'] - datetime.now().timestamp()
                     prompt_queue_session(
                         f"Already have an active 'all' session (ID: {session['id']})",
-                        remaining, domains, timing, profile_name, is_all=True
+                        remaining, domains, timing, profile_name, is_all=True, target_name="all"
                     )
                     return
             for session in pending_sessions:
@@ -226,18 +229,28 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
                 if matching_session:
                     remaining = matching_session['end_time'] - datetime.now().timestamp()
                     target_desc = f"Domains tagged {', '.join(profile['tags'])}" if 'tags' in profile else f"{', '.join(profile['only'])}"
-                    prompt_queue_session(target_desc, remaining, domains, timing, profile_name)
+                    target_name = f"tags:{','.join(profile['tags'])}" if 'tags' in profile else f"only:{','.join(profile['only'][:2])}"
+                    prompt_queue_session(target_desc, remaining, domains, timing, profile_name, target_name=target_name)
                 return
             elif all_pending:
                 print(f"All requested domains are already pending")
                 return
+        
+        # Determine target name for the session
+        if profile.get('all'):
+            target_name = "all"
+        elif 'tags' in profile:
+            target_name = f"tags:{','.join(profile['tags'])}"
+        else:
+            target_name = f"{','.join(profile['only'][:2])}"
         
         session_id = db.add_unblock_session(
             domains,
             timing['duration'],
             timing['wait'],
             profile_name,
-            is_all_domains=profile.get('all', False)
+            is_all_domains=profile.get('all', False),
+            target_name=target_name
         )
         
         print(f"{profile_name.capitalize()} session created (ID: {session_id})")
@@ -275,7 +288,7 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
                 active_session = find_session_with_domains(active_sessions, target_domains)
                 if active_session:
                     remaining = active_session['end_time'] - datetime.now().timestamp()
-                    if prompt_queue_session(target, remaining, target_domains, timing, profile_name):
+                    if prompt_queue_session(target, remaining, target_domains, timing, profile_name, target_name=target):
                         new_session_count += 1
                     else:
                         already_active_targets.append(target)
@@ -294,7 +307,8 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
                 timing['duration'],
                 wait,
                 profile_name,
-                is_all_domains=False
+                is_all_domains=False,
+                target_name=target
             )
             session_ids.append((target, session_id, wait))
         
@@ -504,7 +518,8 @@ def cmd_replace(config, args):
         duration_minutes,
         wait_minutes,
         profile_name,
-        is_all_domains=False
+        is_all_domains=False,
+        target_name=' '.join(args.new_targets)
     )
     
     print(f"Replaced session {session_to_replace['id']} with new session {new_session_id}")

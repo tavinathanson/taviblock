@@ -6,7 +6,7 @@ default_profile: unblock
 # Optional: Progressive penalty system to discourage frequent unblocking
 progressive_penalty:
   enabled: true
-  per_unblock: 10         # Seconds added to wait time per unblock today
+  per_unblock: 5 # Seconds added to wait time per unblock today
   exclude_profiles: ['bypass']    # Profiles that don't count (e.g., ['bypass'])
 
 domains:

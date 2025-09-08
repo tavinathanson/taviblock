@@ -6,57 +6,51 @@ from datetime import datetime, time, timedelta
 from cli import db
 
 
-def get_daily_stats():
+def get_daily_stats(config=None):
     """Get unblock statistics for today"""
     conn = db.get_connection()
     cursor = conn.cursor()
     
-    # Get last reset time
-    cursor.execute("SELECT value FROM global_state WHERE key = 'penalty_last_reset'")
-    row = cursor.fetchone()
-    
     now = datetime.now()
     today_4am = datetime.combine(now.date(), time(4, 0))
     if now.hour < 4:
+        # If it's before 4am, we're still in "yesterday's" period
         today_4am -= timedelta(days=1)
     
-    last_reset = today_4am.timestamp()
+    # The period we're currently in started at today_4am
+    current_period_start = today_4am.timestamp()
+    next_reset = (today_4am + timedelta(days=1)).timestamp()
     
-    if row:
-        stored_reset = float(row['value'])
-        if stored_reset > last_reset:
-            last_reset = stored_reset
+    # Get excluded profiles from config
+    exclude_profiles = []
+    if config:
+        penalty_config = config.data.get('progressive_penalty', {})
+        exclude_profiles = penalty_config.get('exclude_profiles', [])
     
-    # Count unblocks since last reset
-    cursor.execute("""
+    # Build SQL query with proper parameter placeholders
+    placeholders = ','.join('?' * len(exclude_profiles)) if exclude_profiles else ''
+    exclude_clause = f"AND session_type NOT IN ({placeholders})" if exclude_profiles else ""
+    
+    # Count unblocks since the start of current period (excluding configured profiles)
+    query = f"""
         SELECT COUNT(*) as count 
         FROM unblock_sessions 
-        WHERE created_at > ?
-    """, (last_reset,))
+        WHERE created_at > ? 
+        AND queued_for_domains IS NULL 
+        {exclude_clause}
+    """
+    
+    params = [current_period_start] + exclude_profiles
+    cursor.execute(query, params)
     
     count = cursor.fetchone()['count']
     conn.close()
     
     return {
         'count': count,
-        'last_reset': last_reset,
-        'next_reset': (today_4am + timedelta(days=1)).timestamp()
+        'last_reset': current_period_start,
+        'next_reset': next_reset
     }
-
-
-def update_penalty_reset():
-    """Update the last penalty reset time"""
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    
-    now = datetime.now()
-    cursor.execute("""
-        INSERT OR REPLACE INTO global_state (key, value)
-        VALUES ('penalty_last_reset', ?)
-    """, (str(now.timestamp()),))
-    
-    conn.commit()
-    conn.close()
 
 
 def get_progressive_penalty(config):
@@ -66,15 +60,9 @@ def get_progressive_penalty(config):
     if not penalty_config.get('enabled', False):
         return 0
     
-    stats = get_daily_stats()
+    stats = get_daily_stats(config)
     
-    # Check if we need to reset
-    now = datetime.now()
-    if now.timestamp() > stats['next_reset']:
-        update_penalty_reset()
-        return 0
-    
-    # Calculate penalty
+    # Calculate penalty based on unblocks in current period
     per_unblock_seconds = penalty_config.get('per_unblock', 10)
     penalty_seconds = stats['count'] * per_unblock_seconds
     
@@ -100,7 +88,7 @@ def get_penalty_status(config):
     if not penalty_config.get('enabled', False):
         return None
     
-    stats = get_daily_stats()
+    stats = get_daily_stats(config)
     penalty_minutes = get_progressive_penalty(config)
     
     # Time until next reset
