@@ -3,6 +3,12 @@
 # Optional: Default profile to use when no command is specified
 default_profile: unblock
 
+# Optional: Progressive penalty system to discourage frequent unblocking
+progressive_penalty:
+  enabled: true
+  per_unblock: 10         # Seconds added to wait time per unblock today
+  exclude_profiles: ['bypass']    # Profiles that don't count (e.g., ['bypass'])
+
 domains:
   # Individual domains
   netflix.com:
@@ -48,9 +54,6 @@ domains:
     tags: [finance]
   
   honeybook.com:
-    tags: [business]
-  
-  17hats.com:
     tags: [business]
   
   clarity.microsoft.com:
@@ -146,9 +149,6 @@ domains:
       - business.google.com
       - business.facebook.com
       - adsmanager.facebook.com
-      - admin.17hats.com
-      - photos.google.com
-      - ccarnet.org
     tags: [business, ads]
 
 profiles:

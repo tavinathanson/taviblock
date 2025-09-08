@@ -109,9 +109,9 @@ class Config:
                     if 'tags' in config:
                         all_tags.update(config['tags'])
             
-            # If still not found, treat as raw domain
+            # If still not found, it's invalid
             else:
-                domains.append(target)
+                raise ValueError(f"Unknown domain or group: {target}")
         
         return list(set(domains)), all_tags
     
@@ -178,6 +178,12 @@ class Config:
                             wait = rule['wait_override']
                             break
         
+        # Apply progressive penalty if enabled
+        from cli import penalty
+        if penalty.should_apply_penalty(profile_name, self):
+            progressive_penalty = penalty.get_progressive_penalty(self)
+            wait += progressive_penalty
+        
         duration = profile.get('duration', 30)
         
         return {
@@ -197,3 +203,13 @@ class Config:
     def get_default_profile(self) -> Optional[str]:
         """Get the default profile name if specified"""
         return self.data.get('default_profile')
+    
+    def is_valid_target(self, target: str) -> bool:
+        """Check if a target is a valid configured domain or group"""
+        # Direct match
+        if target in self.domains:
+            return True
+        # Try with .com suffix
+        if not target.endswith('.com') and (target + '.com') in self.domains:
+            return True
+        return False

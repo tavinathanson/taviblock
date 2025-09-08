@@ -4,7 +4,8 @@
       "Bash(python3 -m cli.taviblock:*)",
       "Bash(sudo python3 -m cli.taviblock:*)",
       "Bash(python3:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }

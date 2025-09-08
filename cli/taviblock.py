@@ -96,7 +96,13 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
     if not targets:
         targets = []
     
-    domains, all_tags = config.resolve_targets(targets, profile_name)
+    try:
+        domains, all_tags = config.resolve_targets(targets, profile_name)
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("Available targets:")
+        print(f"  Domains/groups: {', '.join(sorted(config.domains.keys()))}")
+        sys.exit(1)
     
     if not domains:
         print("No domains to unblock")
@@ -106,9 +112,49 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
     concurrent_sessions = get_concurrent_session_count()
     timing = config.calculate_timing(profile_name, len(targets), concurrent_sessions, all_tags)
     
+    # Show progressive penalty if applicable
+    from cli import penalty
+    if penalty.should_apply_penalty(profile_name, config):
+        penalty_minutes = penalty.get_progressive_penalty(config)
+        if penalty_minutes > 0:
+            print(f"Progressive penalty: +{penalty_minutes:.1f} minutes (use 'status' for details)")
+    
     # Create sessions for each target (parallel sessions)
     if profile.get('all') or 'tags' in profile or 'only' in profile:
         # These profiles create a single session for all domains
+        # Check if these domains are already unblocked
+        active_sessions = db.get_active_sessions()
+        pending_sessions = db.get_pending_sessions()
+        
+        active_domains = set()
+        for session in active_sessions:
+            active_domains.update(session['domains'])
+            
+        pending_domains = set()
+        for session in pending_sessions:
+            pending_domains.update(session['domains'])
+        
+        # For 'all' profiles, check if there's already an 'all' session
+        if profile.get('all'):
+            for session in active_sessions:
+                if session.get('is_all_domains'):
+                    print(f"Already have an active 'all' session (ID: {session['id']})")
+                    return
+            for session in pending_sessions:
+                if session.get('is_all_domains'):
+                    print(f"Already have a pending 'all' session (ID: {session['id']})")
+                    return
+        else:
+            # Check if all domains are already unblocked or pending
+            all_active = all(domain in active_domains for domain in domains)
+            all_pending = all(domain in pending_domains for domain in domains)
+            if all_active:
+                print(f"All requested domains are already unblocked")
+                return
+            elif all_pending:
+                print(f"All requested domains are already pending")
+                return
+        
         session_id = db.add_unblock_session(
             domains,
             timing['duration'],
@@ -126,18 +172,49 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
             print(f"Unblocking: {', '.join(profile['only'])}")
     else:
         # Create separate sessions for each target
-        session_ids = []
-        base_wait = timing['wait']
+        # First, get currently active and pending sessions to check for duplicates
+        active_sessions = db.get_active_sessions()
+        pending_sessions = db.get_pending_sessions()
         
-        for i, target in enumerate(targets):
-            target_domains, _ = config.resolve_targets([target], profile_name)
-            # Add concurrent penalty for each additional session
+        # Build sets of domains that are active vs pending
+        active_domains = set()
+        for session in active_sessions:
+            active_domains.update(session['domains'])
+            
+        pending_domains = set()
+        for session in pending_sessions:
+            pending_domains.update(session['domains'])
+        
+        session_ids = []
+        already_active_targets = []
+        already_pending_targets = []
+        base_wait = timing['wait']
+        new_session_count = 0  # Track actual new sessions for penalty calculation
+        
+        for target in targets:
+            try:
+                target_domains, _ = config.resolve_targets([target], profile_name)
+            except ValueError:
+                # This shouldn't happen since we validated above, but just in case
+                continue
+            
+            # Check if any of these domains are already active or pending
+            if any(domain in active_domains for domain in target_domains):
+                already_active_targets.append(target)
+                continue
+            elif any(domain in pending_domains for domain in target_domains):
+                already_pending_targets.append(target)
+                continue
+            
+            # Add concurrent penalty based on actual new sessions
             wait_config = profile.get('wait', {})
             if isinstance(wait_config, dict):
                 penalty = wait_config.get('concurrent_penalty', 0)
-                wait = base_wait + (i * penalty)
+                wait = base_wait + (new_session_count * penalty)
             else:
                 wait = base_wait
+            
+            new_session_count += 1  # Increment after calculating wait
             
             session_id = db.add_unblock_session(
                 target_domains,
@@ -148,9 +225,16 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
             )
             session_ids.append((target, session_id, wait))
         
-        print(f"Created {len(session_ids)} parallel session(s):")
-        for target, sid, wait in session_ids:
-            print(f"  [{sid}] {target}: unblocks in {format_time_remaining(wait * 60)}")
+        if already_active_targets:
+            print(f"Already unblocked: {', '.join(already_active_targets)}")
+        
+        if already_pending_targets:
+            print(f"Already pending: {', '.join(already_pending_targets)}")
+        
+        if session_ids:
+            print(f"Created {len(session_ids)} parallel session(s):")
+            for target, sid, wait in session_ids:
+                print(f"  [{sid}] {target}: unblocks in {format_time_remaining(wait * 60)}")
     
     # Mark cooldown if applicable
     if 'cooldown' in profile and profile['cooldown'] > 0:
@@ -209,19 +293,59 @@ def cmd_status(config: Config, args):
             available, remaining = db.check_profile_cooldown(profile_name, profile['cooldown'])
             if not available:
                 print(f"  {profile_name}: {format_time_remaining(remaining)} remaining")
+    
+    # Show progressive penalty status
+    from cli import penalty
+    penalty_status = penalty.get_penalty_status(config)
+    if penalty_status:
+        print(f"\nProgressive penalty:")
+        print(f"  Unblocks today: {penalty_status['unblocks_today']}")
+        print(f"  Current penalty: +{penalty_status['current_penalty']:.1f} minutes")
+        print(f"  Resets in: {penalty_status['reset_in']}")
+        print(f"  Per unblock: +{penalty_status['per_unblock']} seconds")
 
 
-def cmd_cancel(args):
+def find_session_by_target(target, sessions):
+    """Find a session that contains domains for the given target."""
+    for session in sessions:
+        # Check if any of the session's domains match the target
+        for domain in session['domains']:
+            if target in domain or domain in target:
+                return session
+    return None
+
+
+def cmd_cancel(config, args):
     """Cancel session(s)."""
-    if args.session_id:
-        session = db.get_session_info(args.session_id)
-        if not session:
-            print(f"Session {args.session_id} not found")
-            sys.exit(1)
-        
-        db.cancel_session(args.session_id)
-        print(f"Cancelled session {args.session_id}")
+    if args.target:
+        # Check if it's a number (session ID)
+        try:
+            session_id = int(args.target)
+            # Cancel by ID
+            session = db.get_session_info(session_id)
+            if not session:
+                print(f"Session {session_id} not found")
+                sys.exit(1)
+            
+            db.cancel_session(session_id)
+            print(f"Cancelled session {session_id}")
+        except ValueError:
+            # Cancel by target name
+            active = db.get_active_sessions()
+            pending = db.get_pending_sessions()
+            all_sessions = active + pending
+            
+            # Try to find a session matching the target
+            session = find_session_by_target(args.target, all_sessions)
+            
+            if not session:
+                print(f"No session found for '{args.target}'")
+                sys.exit(1)
+            
+            db.cancel_session(session['id'])
+            print(f"Cancelled session {session['id']} for {args.target}")
     else:
+        # Cancel all
         active = db.get_active_sessions()
         pending = db.get_pending_sessions()
         all_sessions = active + pending
@@ -234,6 +358,86 @@ def cmd_cancel(args):
             db.cancel_session(session['id'])
         
         print(f"Cancelled {len(all_sessions)} session(s)")
+
+
+def cmd_replace(config, args):
+    """Replace a pending session with new targets."""
+    pending_sessions = db.get_pending_sessions()
+    active_sessions = db.get_active_sessions()
+    
+    # Handle different ways to identify the session to replace
+    session_to_replace = None
+    
+    # Check if it's a number (session ID) or name
+    try:
+        session_id = int(args.old)
+        # Replace by ID - check pending first
+        for session in pending_sessions:
+            if session['id'] == session_id:
+                session_to_replace = session
+                break
+        
+        if not session_to_replace:
+            # Check if it's active (to give better error message)
+            for session in active_sessions:
+                if session['id'] == session_id:
+                    print(f"Cannot replace session {session_id} - already active")
+                    sys.exit(1)
+            
+            print(f"Session {session_id} not found")
+            sys.exit(1)
+    except ValueError:
+        # Replace by target name
+        session_to_replace = find_session_by_target(args.old, pending_sessions)
+        if not session_to_replace:
+            # Check active sessions for better error message
+            active_match = find_session_by_target(args.old, active_sessions)
+            if active_match:
+                print(f"Cannot replace session for '{args.old}' - already active")
+                sys.exit(1)
+            
+            print(f"No pending session found for '{args.old}'")
+            sys.exit(1)
+    
+    # Get the profile and timing from the original session
+    profile_name = session_to_replace['session_type']
+    profile = config.profiles.get(profile_name, {})
+    
+    # Resolve new targets
+    try:
+        domains, all_tags = config.resolve_targets(args.new_targets, profile_name)
+    except ValueError as e:
+        print(f"Error: {e}")
+        print("Available targets:")
+        print(f"  Domains/groups: {', '.join(sorted(config.domains.keys()))}")
+        sys.exit(1)
+    
+    if not domains:
+        print("No domains to replace with")
+        sys.exit(1)
+    
+    # Calculate wait time from original session
+    original_wait_remaining = session_to_replace['wait_until'] - datetime.now().timestamp()
+    wait_minutes = max(0, original_wait_remaining / 60)  # Keep original wait time
+    duration = session_to_replace['end_time'] - session_to_replace['wait_until']
+    duration_minutes = duration / 60
+    
+    # Cancel old session
+    db.cancel_session(session_to_replace['id'])
+    
+    # Create new session with same timing
+    new_session_id = db.add_unblock_session(
+        domains,
+        duration_minutes,
+        wait_minutes,
+        profile_name,
+        is_all_domains=False
+    )
+    
+    print(f"Replaced session {session_to_replace['id']} with new session {new_session_id}")
+    print(f"New targets: {', '.join(args.new_targets)}")
+    if wait_minutes > 0:
+        print(f"Starts in: {format_time_remaining(wait_minutes * 60)}")
 
 
 def cmd_daemon(args):
@@ -284,8 +488,11 @@ Examples:
   sudo taviblock quick gmail                # Quick 30-second check
   sudo taviblock work                       # Use work profile
   sudo taviblock status                     # Show current status
-  sudo taviblock cancel 42                  # Cancel specific session
+  sudo taviblock cancel 42                  # Cancel session by ID
+  sudo taviblock cancel slack               # Cancel session by name
   sudo taviblock cancel                     # Cancel all sessions
+  sudo taviblock replace 42 reddit         # Replace pending session 42 with reddit
+  sudo taviblock replace slack gmail       # Replace pending slack with gmail
 """
     )
     
@@ -310,7 +517,13 @@ Examples:
     
     # cancel  
     parser_cancel = subparsers.add_parser('cancel', help='Cancel sessions')
-    parser_cancel.add_argument('session_id', nargs='?', type=int, help='Session ID')
+    # Make it accept either a number (session ID) or string (target name)
+    parser_cancel.add_argument('target', nargs='?', help='Session ID or domain/group name to cancel')
+    
+    # replace
+    parser_replace = subparsers.add_parser('replace', help='Replace a pending session')
+    parser_replace.add_argument('old', help='Session ID (number) or domain/group name to replace')
+    parser_replace.add_argument('new_targets', nargs='+', help='New domains/groups to unblock')
     
     # daemon
     parser_daemon = subparsers.add_parser('daemon', help='Control daemon')
@@ -320,7 +533,7 @@ Examples:
     default_profile = config.get_default_profile()
     if default_profile and len(sys.argv) > 1:
         # Get all valid commands (profiles + built-in commands)
-        valid_commands = config.get_profile_names() + ['status', 'cancel', 'daemon']
+        valid_commands = config.get_profile_names() + ['status', 'cancel', 'replace', 'daemon']
         
         # Check if first non-flag argument is a valid command
         first_arg_idx = 1
@@ -349,7 +562,9 @@ Examples:
     if args.command == 'status':
         cmd_status(config, args)
     elif args.command == 'cancel':
-        cmd_cancel(args)
+        cmd_cancel(config, args)
+    elif args.command == 'replace':
+        cmd_replace(config, args)
     elif args.command == 'daemon':
         cmd_daemon(args)
     else:

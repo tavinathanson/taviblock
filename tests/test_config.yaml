@@ -1,0 +1,57 @@
+# Test configuration for taviblock unit tests
+
+default_profile: unblock
+
+domains:
+  # Test domains
+  example.com:
+    tags: [test, basic]
+  
+  test.com:
+    tags: [test, distracting]
+  
+  ultra.com:
+    tags: [ultra_distracting, test]
+  
+  # Test groups
+  testgroup:
+    domains:
+      - group1.com
+      - group2.com
+    tags: [test, group]
+  
+  workgroup:
+    domains:
+      - work1.com
+      - work2.com
+    tags: [work, test]
+
+profiles:
+  unblock:
+    description: "Test unblock profile"
+    wait:
+      base: 5
+      concurrent_penalty: 5
+    duration: 30
+    tag_rules:
+      - tags: [ultra_distracting]
+        wait_override: 30
+  
+  quick:
+    description: "Quick test profile"
+    wait:
+      base: 0.5
+      concurrent_penalty: 0
+    duration: 1
+  
+  testwork:
+    description: "Test work profile"
+    wait: 0
+    duration: 120
+    tags: [work]
+  
+  testall:
+    description: "Test all profile"
+    wait: 1
+    duration: 10
+    all: true
