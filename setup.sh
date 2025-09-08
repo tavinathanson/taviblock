@@ -5,7 +5,14 @@
 
 set -e
 
-echo "=== Taviblock Setup ==="
+# Parse command line arguments
+PRESERVE_DB=false
+if [ "$1" = "--preserve-db" ]; then
+    PRESERVE_DB=true
+    echo "=== Taviblock Setup (Preserving Database) ==="
+else
+    echo "=== Taviblock Setup ==="
+fi
 echo ""
 
 # Check if running as root
@@ -19,8 +26,19 @@ REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Run uninstall first to clean up any existing installation
 echo "1. Running uninstall to clean up any existing installation..."
+
+# If preserving database, backup first
+DB_PATH="/var/lib/taviblock/state.db"
+DB_BACKUP=""
+if [ "$PRESERVE_DB" = true ] && [ -f "$DB_PATH" ]; then
+    DB_BACKUP="/tmp/taviblock_db_preserve_$(date +%Y%m%d_%H%M%S).db"
+    echo "  Backing up database to $DB_BACKUP..."
+    cp "$DB_PATH" "$DB_BACKUP"
+fi
+
 if [ -f "$REPO_DIR/uninstall.sh" ]; then
-    bash "$REPO_DIR/uninstall.sh"
+    # Auto-answer 'N' to config removal prompt
+    echo "N" | bash "$REPO_DIR/uninstall.sh"
     echo ""
 fi
 
@@ -53,7 +71,16 @@ chmod +x "$REPO_DIR/cli/watchdog.py"
 chmod +x "$REPO_DIR/cli/process_monitor.py"
 
 echo "6. Initializing database..."
-/usr/bin/python3 "$REPO_DIR/cli/db.py"
+if [ "$PRESERVE_DB" = true ] && [ -n "$DB_BACKUP" ] && [ -f "$DB_BACKUP" ]; then
+    echo "  Restoring preserved database..."
+    cp "$DB_BACKUP" "$DB_PATH"
+    chown root:wheel "$DB_PATH"
+    chmod 644 "$DB_PATH"
+    rm -f "$DB_BACKUP"
+    echo "  ✓ Database restored"
+else
+    /usr/bin/python3 "$REPO_DIR/cli/db.py"
+fi
 
 echo "7. Installing daemons with enhanced protection..."
 # Use enhanced daemon configuration if available, otherwise use standard

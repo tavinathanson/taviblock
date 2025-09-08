@@ -123,7 +123,8 @@ def cmd_profile(config: Config, profile_name: str, targets: list = None):
     if penalty.should_apply_penalty(profile_name, config):
         penalty_minutes = penalty.get_progressive_penalty(config)
         if penalty_minutes > 0:
-            print(f"Progressive penalty: +{penalty_minutes:.1f} minutes (use 'status' for details)")
+            penalty_seconds = int(penalty_minutes * 60)
+            print(f"Progressive penalty: +{penalty_seconds} seconds (use 'status' for details)")
     
     # Create sessions for each target (parallel sessions)
     if profile.get('all') or 'tags' in profile or 'only' in profile:
@@ -306,7 +307,8 @@ def cmd_status(config: Config, args):
     if penalty_status:
         print(f"\nProgressive penalty:")
         print(f"  Unblocks today: {penalty_status['unblocks_today']}")
-        print(f"  Current penalty: +{penalty_status['current_penalty']:.1f} minutes")
+        penalty_seconds = int(penalty_status['current_penalty'] * 60)
+        print(f"  Current penalty: +{penalty_seconds} seconds")
         print(f"  Resets in: {penalty_status['reset_in']}")
         print(f"  Per unblock: +{penalty_status['per_unblock']} seconds")
 
