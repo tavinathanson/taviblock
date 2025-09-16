@@ -130,19 +130,14 @@ domains:
       - api.slack.com
     tags: [communication, work]
   
-  mailchimp:
-    domains:
-      - mailchimp.com
-      - login.mailchimp.com
-      - us11.admin.mailchimp.com
-    tags: [business, email]
-  
   ads:
     domains:
       - ads.google.com
       - business.google.com
       - business.facebook.com
       - adsmanager.facebook.com
+      - facebook.com
+      - fbcdn.net
     tags: [business, ads]
 
 profiles:
