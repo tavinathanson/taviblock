@@ -32,6 +32,8 @@ class TaviblockDaemon:
         self.running = True
         self.config = Config()
         self.notified_sessions = set()  # Track sessions we've notified about
+        self.last_applescript_check = 0  # Track last AppleScript execution time
+        self.applescript_interval = 5  # Run AppleScript checks every 5 seconds
         
         # Make daemon harder to kill - ignore common signals
         signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore Ctrl+C
@@ -45,6 +47,22 @@ class TaviblockDaemon:
         """Handle shutdown signals gracefully."""
         logger.info(f"Received signal {signum}, shutting down...")
         self.running = False
+        
+    def is_chrome_running(self):
+        """Check if Chrome is running using lightweight process check."""
+        try:
+            result = subprocess.run(['pgrep', '-x', 'Google Chrome'], capture_output=True)
+            return result.returncode == 0
+        except:
+            return False
+    
+    def is_slack_running(self):
+        """Check if Slack is running using lightweight process check."""
+        try:
+            result = subprocess.run(['pgrep', '-x', 'Slack'], capture_output=True)
+            return result.returncode == 0
+        except:
+            return False
         
     def update_hosts_file(self, domains_to_block):
         """Update /etc/hosts with the current blocking rules."""
@@ -97,6 +115,10 @@ class TaviblockDaemon:
         """Close Chrome tabs for multiple domains using a single AppleScript call."""
         if not domains:
             return
+        
+        # Skip if Chrome isn't running
+        if not self.is_chrome_running():
+            return
             
         try:
             # Build the URL checking conditions
@@ -131,13 +153,10 @@ class TaviblockDaemon:
     
     def kill_slack_if_blocked(self, blocked_domains):
         """Kill Slack application if slack.com is blocked."""
-        if 'slack.com' in blocked_domains:
+        if 'slack.com' in blocked_domains and self.is_slack_running():
             try:
-                # Check if Slack is running
-                result = subprocess.run(['pgrep', '-x', 'Slack'], capture_output=True)
-                if result.returncode == 0:
-                    subprocess.run(['killall', 'Slack'])
-                    logger.info("Killed Slack application (slack.com is blocked)")
+                subprocess.run(['killall', 'Slack'])
+                logger.info("Killed Slack application (slack.com is blocked)")
             except Exception as e:
                 logger.error(f"Error killing Slack: {e}")
     
@@ -151,6 +170,10 @@ class TaviblockDaemon:
     
     def check_active_chrome_tab(self, domain):
         """Check if a Chrome tab with this domain is currently active."""
+        # Skip if Chrome isn't running
+        if not self.is_chrome_running():
+            return False
+            
         try:
             script = f'''
             tell application "Google Chrome"
@@ -170,6 +193,10 @@ class TaviblockDaemon:
     
     def check_slack_frontmost(self):
         """Check if Slack is the frontmost application."""
+        # Skip if Slack isn't running
+        if not self.is_slack_running():
+            return False
+            
         try:
             script = '''
             tell application "System Events"
@@ -256,6 +283,10 @@ class TaviblockDaemon:
     
     def count_chrome_tabs(self, domain):
         """Count how many Chrome tabs are open for a domain."""
+        # Skip if Chrome isn't running
+        if not self.is_chrome_running():
+            return 0
+            
         try:
             script = f'''
             tell application "Google Chrome"
@@ -340,11 +371,16 @@ class TaviblockDaemon:
                     self.update_hosts_file(domains_to_block)
                     last_update = current_state
                 
-                # Enforce blocks by closing tabs/apps
-                self.enforce_blocks(domains_to_block)
-                
-                # Check for sessions ending soon
-                self.check_ending_sessions()
+                # Check if it's time to run AppleScript operations (every 5 seconds)
+                current_time = time.time()
+                if current_time - self.last_applescript_check >= self.applescript_interval:
+                    # Enforce blocks by closing tabs/apps
+                    self.enforce_blocks(domains_to_block)
+                    
+                    # Check for sessions ending soon
+                    self.check_ending_sessions()
+                    
+                    self.last_applescript_check = current_time
                 
                 # Log active sessions periodically
                 active_sessions = db.get_active_sessions()
